@@ -6417,5 +6417,23 @@ applyTheme();
 // land them on the dashboard instead of bouncing them back to login.
 restoreSession();
 </script>
+
+// Import the functions you need from the SDKs you need
+import { initializeApp } from "firebase/app";
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
+
+// Your web app's Firebase configuration
+const firebaseConfig = {
+  apiKey: "AIzaSyAH7pRS9FCZhD25_ctgQw_Od-0fvJd6jRk",
+  authDomain: "mgo-toscan.firebaseapp.com",
+  projectId: "mgo-toscan",
+  storageBucket: "mgo-toscan.firebasestorage.app",
+  messagingSenderId: "1025153807203",
+  appId: "1:1025153807203:web:7f7b5e050f7aba15ced956"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
 </body>
 </html>
