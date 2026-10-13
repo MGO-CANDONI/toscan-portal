@@ -1,0 +1,41 @@
+rules_version = '2';
+
+// TOSCAN Portal — Cloud Storage security rules
+// Deploy with:  firebase deploy --only storage
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function signedIn() { return request.auth != null; }
+    function isAdmin() {
+      return signedIn() && request.auth.token.email in [
+        'toscan.candoni@gmail.com'
+      ];
+    }
+    function smallFile() { return request.resource.size < 15 * 1024 * 1024; }  // 15 MB
+
+    match /{allPaths=**} {
+      allow read, write: if isAdmin();
+    }
+
+    // Registration attachments. The public registration form uploads before
+    // the student has an account, and the app needs the download link right
+    // after uploading, so single-file reads are open; listing is not.
+    match /students/{rest=**} {
+      allow get:    if true;
+      allow create: if smallFile();
+      allow update: if signedIn() && smallFile();
+    }
+
+    match /latinHonor/{rest=**} {
+      allow get:           if signedIn();
+      allow create, update: if signedIn() && smallFile();
+    }
+
+    match /top20Submissions/{rest=**} {
+      allow get:           if signedIn();
+      allow create, update: if signedIn() && smallFile();
+    }
+
+    // archives/** and backups/** : Admin only (covered above).
+  }
+}

@@ -1,0 +1,18 @@
+# Netlify deploy settings for the TOSCAN Portal.
+# No build step: Netlify serves the "public" folder exactly as it is.
+[build]
+  publish = "public"
+  command = ""
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
+# Always fetch the newest index.html after a deploy (no stale copies).
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "no-cache"

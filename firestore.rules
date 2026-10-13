@@ -1,0 +1,75 @@
+rules_version = '2';
+
+// TOSCAN Portal — Firestore security rules
+// Deploy with:  firebase deploy --only firestore:rules
+//
+// ADMIN: change the address below if the Admin signs in with a different
+// Firebase Auth account (it must match TOSCAN_STAFF_EMAIL in index.html).
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function isAdmin() {
+      return signedIn() && request.auth.token.email in [
+        'toscan.candoni@gmail.com'
+      ];
+    }
+    // "This record belongs to the person signed in" — matched on the email
+    // stored on the record (emailLower on new records, email on older ones).
+    function owns(data) {
+      return signedIn() && (
+        data.emailLower == request.auth.token.email ||
+        data.email == request.auth.token.email
+      );
+    }
+    function unchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    // Admin can do everything everywhere. Rules below only ADD access.
+    match /{document=**} {
+      allow read, write: if isAdmin();
+    }
+
+    // ---- Students -------------------------------------------------------
+    match /students/{id} {
+      allow read: if owns(resource.data);
+      // Public "Qualified TOSCAN Registration" form (not signed in yet).
+      // create only — an existing record can never be overwritten this way.
+      allow create: if request.resource.data.archived == false;
+      // A student may update their own info/attachments, but never their
+      // status, amount, award, archive flag or TOSCAN ID.
+      allow update: if owns(resource.data)
+                    && unchanged(['status', 'amount', 'award', 'archived', 'toscanId', 'emailLower']);
+    }
+
+    // ---- Applications (public "Apply as a New TOSCAN Student") ----------
+    match /applications/{id} {
+      allow create: if true;
+    }
+
+    // ---- Cross-device mirrors (CloudSync in index.html) ----------------
+    match /sync_applications/{id} {
+      allow create: if true;
+      allow read:   if owns(resource.data);
+      allow update: if owns(resource.data) && unchanged(['status', 'email', 'emailLower']);
+    }
+    match /sync_archivedApplications/{id} {
+      allow read: if owns(resource.data);
+    }
+    match /sync_accessRequests/{id} {
+      allow create: if request.resource.data.status == 'Pending';
+      allow read:   if owns(resource.data);
+    }
+    match /sync_config/{id} {
+      allow read: if true;   // deadlines / open-closed windows shown on the login screen
+    }
+
+    // ---- Logs and outgoing mail (write-only for everyone else) ----------
+    match /mail/{id}               { allow create: if true; }
+    match /logins/{id}             { allow create: if true; }
+    match /attachmentUpdates/{id}  { allow create: if signedIn(); }
+    match /latinHonorUpdates/{id}  { allow create: if signedIn(); }
+    match /top20Submissions/{id}   { allow create: if signedIn(); }
+  }
+}
