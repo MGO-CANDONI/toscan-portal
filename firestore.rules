@@ -3,73 +3,92 @@ rules_version = '2';
 // TOSCAN Portal — Firestore security rules
 // Deploy with:  firebase deploy --only firestore:rules
 //
-// ADMIN: change the address below if the Admin signs in with a different
-// Firebase Auth account (it must match TOSCAN_STAFF_EMAIL in index.html).
+// Access model
+//   - Everyone signs in with Google or email/password (Firebase Authentication).
+//   - A new person creates their own /users/{uid} record with status "pending".
+//   - An Admin approves them and sets role (student / staff / admin) and group
+//     (top10 / top20 / none). Only approved users can upload files.
+//   - The Google accounts in BOOTSTRAP_ADMINS are always Admin. Keep this list
+//     identical to ADMIN_EMAILS in public/index.html and to storage.rules.
 service cloud.firestore {
   match /databases/{database}/documents {
 
     function signedIn() { return request.auth != null; }
-    function isAdmin() {
-      return signedIn() && request.auth.token.email in [
-        'toscan.candoni@gmail.com'
-      ];
+    function bootstrapAdmin() {
+      return signedIn()
+        && request.auth.token.email in ['toscan.candoni@gmail.com']
+        && request.auth.token.email_verified == true;
     }
-    // "This record belongs to the person signed in" — matched on the email
-    // stored on the record (emailLower on new records, email on older ones).
-    function owns(data) {
-      return signedIn() && (
-        data.emailLower == request.auth.token.email ||
-        data.email == request.auth.token.email
-      );
-    }
-    function unchanged(fields) {
-      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
-    }
+    function myPath() { return /databases/$(database)/documents/users/$(request.auth.uid); }
+    function hasProfile() { return signedIn() && exists(myPath()); }
+    function me() { return get(myPath()).data; }
+    function approved() { return hasProfile() && me().status == 'approved'; }
+    function isAdmin() { return bootstrapAdmin() || (approved() && me().role == 'admin'); }
+    function isStaff() { return isAdmin() || (approved() && me().role == 'staff'); }
+    function changed() { return request.resource.data.diff(resource.data).affectedKeys(); }
 
-    // Admin can do everything everywhere. Rules below only ADD access.
+    // Admins can read and write everything. The rules below only ADD access.
     match /{document=**} {
       allow read, write: if isAdmin();
     }
 
-    // ---- Students -------------------------------------------------------
+    // Term, upload window, batches, signatories
+    match /settings/{id} {
+      allow read: if signedIn();
+    }
+
+    // One record per person, keyed by their Firebase uid
+    match /users/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isStaff());
+
+      // Self-registration: always starts as a pending student with no group
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.role == 'student'
+        && request.resource.data.group == 'none'
+        && request.resource.data.email == request.auth.token.email
+        && !request.resource.data.keys().hasAny(['latinHonor', 'rank', 'approvedAt', 'approvedBy', 'adminNote']);
+
+      // Owners may edit their own details and picture, never their access.
+      // Names, TOSCAN ID and batch lock once the account is approved.
+      allow update: if signedIn() && request.auth.uid == uid
+        && !changed().hasAny(['status', 'role', 'group', 'email', 'emailLower', 'uid', 'latinHonor',
+                              'rank', 'createdAt', 'approvedAt', 'approvedBy', 'adminNote'])
+        && (resource.data.status == 'pending'
+            || !changed().hasAny(['surname', 'firstName', 'middleName', 'extName', 'toscanId', 'batch']));
+    }
+
+    // Uploaded files and their review status
+    match /submissions/{id} {
+      allow read: if signedIn() && (resource.data.uid == request.auth.uid || isStaff());
+      allow create: if approved()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.status == 'Submitted'
+        && request.resource.data.remarks == '';
+      // Staff and Admin review: only the review fields can change
+      allow update: if isStaff()
+        && changed().hasOnly(['status', 'remarks', 'reviewedAt', 'reviewedBy']);
+      // Owners can withdraw a file that hasn't been looked at yet
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid
+        && resource.data.status == 'Submitted';
+    }
+
+    // One allowance record per student per semester (written by Admin only)
+    match /allowances/{id} {
+      allow read: if signedIn() && (resource.data.uid == request.auth.uid || isStaff());
+    }
+
+    // Outgoing email queue for the "Trigger Email from Firestore" extension
+    match /mail/{id} {
+      allow create: if signedIn();
+    }
+
+    // ---- Records from the old portal (read-only) -------------------------
+    // Used to pre-fill a returning student's registration form.
     match /students/{id} {
-      allow read: if owns(resource.data);
-      // Public "Qualified TOSCAN Registration" form (not signed in yet).
-      // create only — an existing record can never be overwritten this way.
-      allow create: if request.resource.data.archived == false;
-      // A student may update their own info/attachments, but never their
-      // status, amount, award, archive flag or TOSCAN ID.
-      allow update: if owns(resource.data)
-                    && unchanged(['status', 'amount', 'award', 'archived', 'toscanId', 'emailLower']);
+      allow read: if signedIn() && (
+        resource.data.emailLower == request.auth.token.email ||
+        resource.data.email == request.auth.token.email);
     }
-
-    // ---- Applications (public "Apply as a New TOSCAN Student") ----------
-    match /applications/{id} {
-      allow create: if true;
-    }
-
-    // ---- Cross-device mirrors (CloudSync in index.html) ----------------
-    match /sync_applications/{id} {
-      allow create: if true;
-      allow read:   if owns(resource.data);
-      allow update: if owns(resource.data) && unchanged(['status', 'email', 'emailLower']);
-    }
-    match /sync_archivedApplications/{id} {
-      allow read: if owns(resource.data);
-    }
-    match /sync_accessRequests/{id} {
-      allow create: if request.resource.data.status == 'Pending';
-      allow read:   if owns(resource.data);
-    }
-    match /sync_config/{id} {
-      allow read: if true;   // deadlines / open-closed windows shown on the login screen
-    }
-
-    // ---- Logs and outgoing mail (write-only for everyone else) ----------
-    match /mail/{id}               { allow create: if true; }
-    match /logins/{id}             { allow create: if true; }
-    match /attachmentUpdates/{id}  { allow create: if signedIn(); }
-    match /latinHonorUpdates/{id}  { allow create: if signedIn(); }
-    match /top20Submissions/{id}   { allow create: if signedIn(); }
   }
 }

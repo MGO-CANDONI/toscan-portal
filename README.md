@@ -2,69 +2,71 @@
 
 Ten Outstanding Students & Payroll System — Municipality of Candoni.
 
-Static web app (isa lang ka `public/index.html`) nga naga-gamit sang **Firebase**
-(Firestore + Cloud Storage + Authentication) bilang database, ginatago sa **GitHub**,
-kag ginadeploy sa **Netlify**.
+A static web app (`public/index.html`) that uses **Firebase** (Authentication, Firestore, Cloud Storage),
+is kept on **GitHub**, and is deployed by **Netlify**.
 
 ```
 toscan-portal/
-├── public/
-│   └── index.html          ← ang app (may built-in na Firebase config sang "mgo-toscan")
-├── firestore.rules         ← security rules sang database
-├── storage.rules           ← security rules sang file uploads
-├── firebase.json           ← para sa Firebase CLI
-├── .firebaserc             ← project: mgo-toscan
-├── firestore.indexes.json
-├── netlify.toml            ← Netlify: i-publish ang "public" folder, wala build
-└── .gitignore
+├── public/index.html      ← the app (Firebase config for project "mgo-toscan" is built in)
+├── firestore.rules        ← database security rules
+├── storage.rules          ← file-upload security rules
+├── firebase.json / .firebaserc / firestore.indexes.json
+├── netlify.toml           ← Netlify publishes the "public" folder, no build step
+└── legacy/index.html      ← the previous version of the portal (not published, kept for reference)
 ```
 
----
+## How it works
 
-## 1. Firebase setup (isa ka beses lang)
+1. **One sign-in page** for everyone: *Sign in with Google*, or email and password.
+2. A new person fills in their details and waits. Their record is **pending**.
+3. The **Admin** opens **Approvals**, chooses the access level (**Student**, **Staff** or **Admin**) and the group
+   (**Top 10 — Awardee** or **Top 20 — Qualifier**), then approves. The person is emailed.
+4. Each student has **their own dashboard**: upload files, see each file's status
+   (Submitted → Under Review → Approved / Returned, with remarks), see their allowance per semester
+   (Processing / Released), and change their profile picture.
+5. **Staff** can view all users and review files. **Admins** can also approve users, set allowances,
+   print the payroll and change settings.
 
-Sa <https://console.firebase.google.com> → project **mgo-toscan**:
+| Firestore collection | What it holds |
+| --- | --- |
+| `users/{uid}` | One record per person: details, picture, `status`, `role`, `group` |
+| `submissions` | Uploaded files with `status`, `remarks`, reviewer |
+| `allowances/{uid}__{SY}__{semester}` | One amount per student per semester, `Processing` or `Released` |
+| `settings/app` | Current term, upload window, batches, payroll signatories, office email |
+| `mail` | Outgoing emails (sent by the *Trigger Email from Firestore* extension) |
+| `students` | Records from the old portal — read-only, used to pre-fill a returning student's form |
 
-1. **Firestore Database** → Create database (Production mode, region `asia-southeast1`).
-2. **Storage** → Get started. *(Ang bag-o nga projects nagakinahanglan sang Blaze plan para sa Storage.)*
-3. **Authentication** → Sign-in method → i-enable ang **Email/Password**.
-4. **Authentication → Users → Add user**: `toscan.candoni@gmail.com` + password sang Admin.
-   Amo ini ang gamiton sang Admin sa pag-login (username `admin`, password = ang ginbutang mo diri).
-5. **Authentication → Settings → Authorized domains** → idugang ang Netlify domain mo
-   (halimbawa `toscan-candoni.netlify.app`).
-6. *(Para makapadala sang email)* **Extensions** → i-install ang **Trigger Email from Firestore**,
-   collection: `mail`. Kon wala ini, ang emails ma-queue lang sa `mail` collection.
+## One-time Firebase setup
 
-### I-deploy ang security rules
+In <https://console.firebase.google.com> → project **mgo-toscan**:
 
-Kinahanglan ini antes mag-live — kon wala, bisan sin-o pwede makabasa/makasulat sang records.
+1. **Authentication → Sign-in method**: enable **Google** and **Email/Password**.
+2. **Authentication → Settings → Authorized domains**: add the Netlify domain
+   (for example `toscan-candoni.netlify.app`) and any custom domain.
+3. **Firestore** and **Storage** must exist (they already do if the old portal was used).
+4. *(For emails)* **Extensions → Trigger Email from Firestore**, collection `mail`.
+5. Deploy the security rules — **required**, the app depends on them:
 
-```bash
-npm install -g firebase-tools
-firebase login
-firebase deploy --only firestore:rules,storage
-```
+   ```bash
+   npm install -g firebase-tools
+   firebase login
+   firebase deploy --only firestore:rules,storage
+   ```
 
-> Kon lain ang email sang Admin, ilisan ang `toscan.candoni@gmail.com` sa
-> `firestore.rules`, `storage.rules`, **kag** sa `TOSCAN_STAFF_EMAIL` sa `public/index.html`.
+   On the first deploy, accept the prompt that lets Storage rules read Firestore.
 
----
+### The first Admin
 
-## 2. I-push sa GitHub
+`toscan.candoni@gmail.com` becomes Admin automatically the first time it signs in with
+**Sign in with Google**. It must be Google sign-in, because the rules only trust a verified email.
+From there, make other people Admin or Staff in **Approvals** or **Users**.
 
-Maghimo anay sang bag-o nga repository sa <https://github.com/new>
-(halimbawa `toscan-portal`, **Private**, wala README). Dayon sa folder sini:
+To use a different Admin Google account, change the email in **three places**:
+`ADMIN_EMAILS` in `public/index.html`, and `bootstrapAdmin()` in both `firestore.rules` and `storage.rules`.
 
-```bash
-git init
-git add .
-git commit -m "TOSCAN Portal with Firebase backend and Netlify config"
-git branch -M main
-git remote add origin https://github.com/<USERNAME-MO>/toscan-portal.git
-git push -u origin main
-```
+## Deploying changes
 
-Sa masunod nga pagbag-o:
+Netlify redeploys automatically on every push to `main`:
 
 ```bash
 git add .
@@ -72,43 +74,9 @@ git commit -m "Describe the change"
 git push
 ```
 
----
+## Moving from the old portal
 
-## 3. I-deploy sa Netlify
-
-1. <https://app.netlify.com> → **Add new site → Import an existing project → GitHub**.
-2. Pilia ang `toscan-portal` repo.
-3. Build settings — ginabasa na halin sa `netlify.toml`, gani pabay-i lang:
-   - Build command: *(blangko)*
-   - Publish directory: `public`
-4. **Deploy**. Pagkatapos, ang site mo ara sa `https://<pangalan>.netlify.app`.
-5. *(Optional)* Site configuration → Change site name, ukon idugang ang custom domain.
-
-Kada `git push` sa `main`, ang Netlify kusa nga mag-redeploy.
-
----
-
-## 4. Paano nagaobra ang database connection
-
-- Ang Firebase config ara na sa `public/index.html` (`TOSCAN_FIREBASE_CONFIG`), gani
-  **tanan nga device kusa nga naka-connect** — wala na kinahanglan i-paste sa Settings.
-- Ang **CloudSync** layer naga-mirror sang applications, confirmations (sign-in approvals)
-  kag shared settings (deadlines, open/closed windows) sa Firestore, para makita
-  sang Admin ang ginsubmit halin sa iban nga phones/computers.
-- Ang mga estudyante kag applicants naga-download lang sang **ila kaugalingon** nga records
-  pagkatapos mag-sign in (ginapatuman sang security rules).
-- Ang passwords **wala gid** ginatago sa Firestore — ang Firebase Authentication lang ang may hawid.
-
-### Una nga paggamit sang Admin
-
-1. Login bilang `admin` (password = ang sa Firebase Auth user sa step 1.4).
-2. Settings → Backend & Database → **Test Firebase Connection**.
-3. Kon may records na sa sini nga computer halin sang una: **Upload All Local Data to Firestore**.
-
-### Mga dapat mahibal-an
-
-- Ang mga estudyante nga gin-register sang **Admin** (indi self-registration) wala pa
-  Firebase Auth account. Himui sila sa Authentication → Users, ukon ipa-register sila mismo.
-- Ang `mail` kag `applications` collections bukas para sa public nga *create* (kinahanglan
-  sang registration/application forms nga wala pa naka-login). Bantayi ang usage sa
-  Firebase console; pwede magdugang sang **App Check** kon may abuso.
+- Old records stay in Firestore (`students`, `applications`, …) and are not deleted.
+- Students register again with the same email; the form is pre-filled from their old record.
+  The Admin then approves them and assigns Top 10 / Top 20.
+- Uploaded files from the old portal remain in Storage and can be opened from the Firebase console.
