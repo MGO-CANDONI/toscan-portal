@@ -10,9 +10,18 @@
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
 
-# Always fetch the newest index.html after a deploy (no stale copies).
+# Always fetch the newest page, scripts and styles after a deploy.
 [[headers]]
   for = "/index.html"
+  [headers.values]
+    Cache-Control = "no-cache"
+[[headers]]
+  for = "/js/*"
+  [headers.values]
+    Cache-Control = "no-cache"
+[[headers]]
+  for = "/assets/app.css"
   [headers.values]
     Cache-Control = "no-cache"

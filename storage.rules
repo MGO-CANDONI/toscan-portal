@@ -1,44 +1,60 @@
 rules_version = '2';
 
 // TOSCAN Portal — Cloud Storage security rules
-// Deploy with:  firebase deploy --only storage
-// These rules read the user's record in Firestore. The first deploy asks you to
-// allow Storage to read Firestore — answer yes.
+// Deploy: firebase deploy --only storage
+//
+// No file can be overwritten or deleted from a browser. Rejected uploads are
+// cleaned up by the server; approved documents stay on file permanently.
 service firebase.storage {
   match /b/{bucket}/o {
 
     function signedIn() { return request.auth != null; }
-    function bootstrapAdmin() {
-      return signedIn()
-        && request.auth.token.email in ['toscan.candoni@gmail.com']
-        && request.auth.token.email_verified == true;
-    }
-    function profilePath() { return /databases/(default)/documents/users/$(request.auth.uid); }
-    function approved() {
-      return signedIn() && firestore.exists(profilePath())
-        && firestore.get(profilePath()).data.status == 'approved';
-    }
-    function isAdmin() { return bootstrapAdmin() || (approved() && firestore.get(profilePath()).data.role == 'admin'); }
-    function isStaff() { return isAdmin() || (approved() && firestore.get(profilePath()).data.role == 'staff'); }
+    function role() { return signedIn() ? request.auth.token.get('role', '') : ''; }
+    function isAdmin() { return role() == 'admin'; }
+    function isStaff() { return role() in ['staff', 'admin']; }
+    function isStudent(sid) { return role() == 'student' && request.auth.token.get('studentId', '') == sid; }
+    function sizeUnder(mb) { return request.resource.size < mb * 1024 * 1024; }
 
-    match /{allPaths=**} {
-      allow read, write: if isAdmin();
+    // Student documents: documents/{studentId}/{submissionId}/{fileName}
+    match /documents/{studentId}/{submissionId}/{fileName} {
+      allow read: if isStaff() || isStudent(studentId);
+      allow create: if isStudent(studentId)
+        && submissionId.matches('^[A-Za-z0-9]{10,40}$')
+        && sizeUnder(15)
+        && request.resource.contentType.matches('application/pdf|image/(jpeg|png|webp)');
+      allow update, delete: if false;
     }
 
-    // Files uploaded from a user's dashboard (15 MB limit)
-    match /uploads/{uid}/{fileName} {
+    // Profile photos: photos/{uid}/{fileName}
+    match /photos/{uid}/{fileName} {
       allow read: if signedIn() && (request.auth.uid == uid || isStaff());
-      allow create: if signedIn() && request.auth.uid == uid && approved()
-        && request.resource.size < 15 * 1024 * 1024;
-      allow delete: if signedIn() && request.auth.uid == uid;
+      allow create, update: if signedIn() && request.auth.uid == uid && role() != ''
+        && sizeUnder(3) && request.resource.contentType.matches('image/(jpeg|png|webp)');
+      allow delete: if false;
     }
 
-    // Profile pictures (images up to 3 MB; the app resizes them first)
-    match /profile/{uid}/{fileName} {
-      allow read: if signedIn();
-      allow write: if signedIn() && request.auth.uid == uid
-        && request.resource.size < 3 * 1024 * 1024
-        && request.resource.contentType.matches('image/.*');
+    // Supporting files for historical imports
+    match /historical/{importId}/{fileName} {
+      allow read: if isStaff();
+      allow create: if isStaff() && sizeUnder(25)
+        && request.resource.contentType.matches('application/pdf|image/(jpeg|png)|text/csv|application/vnd.openxmlformats-officedocument.spreadsheetml.sheet|application/vnd.ms-excel');
+      allow update, delete: if false;
     }
+
+    // Login-page image (public)
+    match /branding/{fileName} {
+      allow read: if true;
+      allow create, update: if isAdmin() && sizeUnder(5) && request.resource.contentType.matches('image/(jpeg|png|webp)');
+      allow delete: if false;
+    }
+
+    // Files from the old portal and the October redesign: preserved, read-only.
+    match /students/{rest=**}         { allow read: if isStaff(); }
+    match /latinHonor/{rest=**}       { allow read: if isStaff(); }
+    match /top20Submissions/{rest=**} { allow read: if isStaff(); }
+    match /archives/{rest=**}         { allow read: if isAdmin(); }
+    match /backups/{rest=**}          { allow read: if isAdmin(); }
+    match /uploads/{rest=**}          { allow read: if isAdmin(); }
+    match /profile/{rest=**}          { allow read: if isAdmin(); }
   }
 }

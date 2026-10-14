@@ -1,82 +1,44 @@
 # TOSCAN Portal
 
-Ten Outstanding Students & Payroll System — Municipality of Candoni.
+Ten Outstanding Students of Candoni — student records, document compliance, allowance eligibility and payroll for the Municipal Government of Candoni, Negros Occidental.
 
-A static web app (`public/index.html`) that uses **Firebase** (Authentication, Firestore, Cloud Storage),
-is kept on **GitHub**, and is deployed by **Netlify**.
+**Excellence. Leadership. Service.**
 
-```
-toscan-portal/
-├── public/index.html      ← the app (Firebase config for project "mgo-toscan" is built in)
-├── firestore.rules        ← database security rules
-├── storage.rules          ← file-upload security rules
-├── firebase.json / .firebaserc / firestore.indexes.json
-├── netlify.toml           ← Netlify publishes the "public" folder, no build step
-└── legacy/index.html      ← the previous version of the portal (not published, kept for reference)
-```
+## Architecture
 
-## How it works
+| Part | Where | What it does |
+| --- | --- | --- |
+| Website | `public/` (Netlify, no build step) | One sign-in (Google or email). Student, staff and administrator dashboards. Reads data; writes only file uploads and "mark notification read". |
+| Cloud Functions | `functions/` (Firebase, `asia-southeast1`) | Every change: registration and approval, roles, documents, deadlines, eligibility, payroll, imports, settings, audit log, notifications, the daily scheduled job. |
+| Security rules | `firestore.rules`, `storage.rules` | Students read only their own records; browsers can't write program, document or payroll data; files can't be overwritten or deleted. |
+| Shared policy code | `functions/src/core/` → copied to `public/js/core/` | Deadlines (Asia/Manila), term → allowance-period mapping, statuses — identical on server and website. |
 
-1. **One sign-in page** for everyone: *Sign in with Google*, or email and password.
-2. A new person fills in their details and waits. Their record is **pending**.
-3. The **Admin** opens **Approvals**, chooses the access level (**Student**, **Staff** or **Admin**) and the group
-   (**Top 10 — Awardee** or **Top 20 — Qualifier**), then approves. The person is emailed.
-4. Each student has **their own dashboard**: upload files, see each file's status
-   (Submitted → Under Review → Approved / Returned, with remarks), see their allowance per semester
-   (Processing / Released), and change their profile picture.
-5. **Staff** can view all users and review files. **Admins** can also approve users, set allowances,
-   print the payroll and change settings.
+Roles are Firebase custom claims (`student` with a `studentId`, `staff`, `admin`) set only by the functions. Staff have individual permissions (review documents, verify records, decide eligibility, prepare payroll, approve payroll, record release, encode history, view reports).
 
-| Firestore collection | What it holds |
-| --- | --- |
-| `users/{uid}` | One record per person: details, picture, `status`, `role`, `group` |
-| `submissions` | Uploaded files with `status`, `remarks`, reviewer |
-| `allowances/{uid}__{SY}__{semester}` | One amount per student per semester, `Processing` or `Released` |
-| `settings/app` | Current term, upload window, batches, payroll signatories, office email |
-| `mail` | Outgoing emails (sent by the *Trigger Email from Firestore* extension) |
-| `students` | Records from the old portal — read-only, used to pre-fill a returning student's form |
+## Main workflows
 
-## One-time Firebase setup
+1. **Registration** → admin approves, links the TOSCAN record, sets classification (Top 10 / Top 20) and access.
+2. **Enrollment record per term** → a change of school, level or program waits for staff verification; earlier terms are kept.
+3. **Documents** (school ID, proof of enrollment, previous grades — configurable) → Submitted → Under Review → Approved (locked permanently) or Returned with remarks → corrected version linked to the previous one. Approved documents can only be replaced through an administrator-opened correction; the original stays on file as *Superseded*.
+4. **Deadline**: by default within 5 months of the term opening (configurable: months, within/after, cutoff, per-school calendars, per-student opening date, approved extensions).
+5. **Eligibility** per allowance period (two per year; a third term maps to the second period) → staff decide Qualified / Not Qualified. Qualifying creates an **entitlement** whose ID is `student + year + period + allowance type`, so it can exist only once.
+6. **Payroll**: a draft is generated automatically each month (and on demand) from entitlements awaiting payroll → submitted → reviewed by a different person → approved → released with the actual payment date and reference.
+7. **Historical records**: manual entry or CSV/Excel import with preview and duplicate detection; released history is never paid again.
+8. **Reports** with Excel/CSV export and print-to-PDF; totals are computed from payroll lines.
 
-In <https://console.firebase.google.com> → project **mgo-toscan**:
+## Collections
 
-1. **Authentication → Sign-in method**: enable **Google** and **Email/Password**.
-2. **Authentication → Settings → Authorized domains**: add the Netlify domain
-   (for example `toscan-candoni.netlify.app`) and any custom domain.
-3. **Firestore** and **Storage** must exist (they already do if the old portal was used).
-4. *(For emails)* **Extensions → Trigger Email from Firestore**, collection `mail`.
-5. Deploy the security rules — **required**, the app depends on them:
+`users`, `students` (old records upgraded in place), `studentAcademicHistory`, `documentRequirements`, `submissions`, `deadlineExtensions`, `eligibility`, `allowanceTypes`, `allowances` (entitlements), `payrolls`, `payrollItems`, `historicalPayments`, `programStatusHistory`, `academicYears`, `schools`, `settings`, `notifications`, `auditLogs`, `imports`, `mail`, `counters`. Old-portal collections are kept read-only.
 
-   ```bash
-   npm install -g firebase-tools
-   firebase login
-   firebase deploy --only firestore:rules,storage
-   ```
-
-   On the first deploy, accept the prompt that lets Storage rules read Firestore.
-
-### The first Admin
-
-`toscan.candoni@gmail.com` becomes Admin automatically the first time it signs in with
-**Sign in with Google**. It must be Google sign-in, because the rules only trust a verified email.
-From there, make other people Admin or Staff in **Approvals** or **Users**.
-
-To use a different Admin Google account, change the email in **three places**:
-`ADMIN_EMAILS` in `public/index.html`, and `bootstrapAdmin()` in both `firestore.rules` and `storage.rules`.
-
-## Deploying changes
-
-Netlify redeploys automatically on every push to `main`:
+## Tests
 
 ```bash
-git add .
-git commit -m "Describe the change"
-git push
+cd functions && npm install && npm test   # policy unit tests + full workflow tests of the functions
+cd tests && npm install && npm test       # security rules on the Firebase emulators (needs Java)
 ```
 
-## Moving from the old portal
+## Deploying
 
-- Old records stay in Firestore (`students`, `applications`, …) and are not deleted.
-- Students register again with the same email; the form is pre-filled from their old record.
-  The Admin then approves them and assigns Top 10 / Top 20.
-- Uploaded files from the old portal remain in Storage and can be opened from the Firebase console.
+See **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**. Assessment and migration plan: [docs/ASSESSMENT.md](docs/ASSESSMENT.md). What changed: [docs/RELEASE-NOTES.md](docs/RELEASE-NOTES.md).
+
+The previous single-file app is kept unpublished in `legacy/index.html` for reference.

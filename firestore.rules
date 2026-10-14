@@ -1,94 +1,75 @@
 rules_version = '2';
 
 // TOSCAN Portal — Firestore security rules
-// Deploy with:  firebase deploy --only firestore:rules
+// Deploy: firebase deploy --only firestore:rules
 //
-// Access model
-//   - Everyone signs in with Google or email/password (Firebase Authentication).
-//   - A new person creates their own /users/{uid} record with status "pending".
-//   - An Admin approves them and sets role (student / staff / admin) and group
-//     (top10 / top20 / none). Only approved users can upload files.
-//   - The Google accounts in BOOTSTRAP_ADMINS are always Admin. Keep this list
-//     identical to ADMIN_EMAILS in public/index.html and to storage.rules.
+// Model: the web app READS; Cloud Functions WRITE. Roles come from custom
+// claims set by the functions (token.role = student | staff | admin, and
+// token.studentId for students). Nobody, including administrators, can write
+// program, document or payroll records directly from a browser, so every change
+// is validated and recorded in the audit log by the server.
 service cloud.firestore {
   match /databases/{database}/documents {
 
     function signedIn() { return request.auth != null; }
-    function bootstrapAdmin() {
-      return signedIn()
-        && request.auth.token.email in ['toscan.candoni@gmail.com']
-        && request.auth.token.email_verified == true;
-    }
-    function myPath() { return /databases/$(database)/documents/users/$(request.auth.uid); }
-    function hasProfile() { return signedIn() && exists(myPath()); }
-    function me() { return get(myPath()).data; }
-    function approved() { return hasProfile() && me().status == 'approved'; }
-    function isAdmin() { return bootstrapAdmin() || (approved() && me().role == 'admin'); }
-    function isStaff() { return isAdmin() || (approved() && me().role == 'staff'); }
-    function changed() { return request.resource.data.diff(resource.data).affectedKeys(); }
+    function role() { return signedIn() ? request.auth.token.get('role', '') : ''; }
+    function isAdmin() { return role() == 'admin'; }
+    function isStaff() { return role() in ['staff', 'admin']; }
+    function isStudent(sid) { return role() == 'student' && request.auth.token.get('studentId', '') == sid; }
+    function ownsRecord() { return isStudent(resource.data.studentId); }
 
-    // Admins can read and write everything. The rules below only ADD access.
-    match /{document=**} {
-      allow read, write: if isAdmin();
-    }
-
-    // Term, upload window, batches, signatories
-    match /settings/{id} {
-      allow read: if signedIn();
-    }
-
-    // One record per person, keyed by their Firebase uid
+    // Login accounts: you see your own; staff see all.
     match /users/{uid} {
       allow read: if signedIn() && (request.auth.uid == uid || isStaff());
-
-      // Self-registration: always starts as a pending student with no group
-      allow create: if signedIn() && request.auth.uid == uid
-        && request.resource.data.status == 'pending'
-        && request.resource.data.role == 'student'
-        && request.resource.data.group == 'none'
-        && request.resource.data.email == request.auth.token.email
-        && !request.resource.data.keys().hasAny(['latinHonor', 'rank', 'approvedAt', 'approvedBy', 'adminNote']);
-
-      // Owners may edit their own details and picture, never their access.
-      // Names, TOSCAN ID and batch lock once the account is approved.
-      allow update: if signedIn() && request.auth.uid == uid
-        && !changed().hasAny(['status', 'role', 'group', 'email', 'emailLower', 'uid', 'latinHonor',
-                              'rank', 'createdAt', 'approvedAt', 'approvedBy', 'adminNote'])
-        && (resource.data.status == 'pending'
-            || !changed().hasAny(['surname', 'firstName', 'middleName', 'extName', 'toscanId', 'batch']));
     }
 
-    // Uploaded files and their review status
-    match /submissions/{id} {
-      allow read: if signedIn() && (resource.data.uid == request.auth.uid || isStaff());
-      allow create: if approved()
-        && request.resource.data.uid == request.auth.uid
-        && request.resource.data.status == 'Submitted'
-        && request.resource.data.remarks == '';
-      // Staff and Admin review: only the review fields can change
-      allow update: if isStaff()
-        && changed().hasOnly(['status', 'remarks', 'reviewedAt', 'reviewedBy']);
-      // Owners can withdraw a file that hasn't been looked at yet
-      allow delete: if signedIn() && resource.data.uid == request.auth.uid
-        && resource.data.status == 'Submitted';
+    // Student master records
+    match /students/{studentId} {
+      allow read: if isStaff() || isStudent(studentId);
     }
 
-    // One allowance record per student per semester (written by Admin only)
-    match /allowances/{id} {
-      allow read: if signedIn() && (resource.data.uid == request.auth.uid || isStaff());
+    // Records that belong to one student (each carries studentId)
+    match /studentAcademicHistory/{id} { allow read: if isStaff() || ownsRecord(); }
+    match /submissions/{id}            { allow read: if isStaff() || ownsRecord(); }
+    match /eligibility/{id}            { allow read: if isStaff() || ownsRecord(); }
+    match /allowances/{id}             { allow read: if isStaff() || ownsRecord(); }
+    match /payrollItems/{id}           { allow read: if isStaff() || ownsRecord(); }
+    match /historicalPayments/{id}     { allow read: if isStaff() || ownsRecord(); }
+    match /programStatusHistory/{id}   { allow read: if isStaff() || ownsRecord(); }
+    match /deadlineExtensions/{id}     { allow read: if isStaff() || ownsRecord(); }
+
+    // Staff-only records
+    match /payrolls/{id} { allow read: if isStaff(); }
+    match /imports/{id}  { allow read: if isStaff(); }
+    match /auditLogs/{id} { allow read: if isAdmin(); }
+
+    // Configuration (read by every signed-in user; changed only through saveMasterData)
+    match /settings/{id}             { allow read: if signedIn(); }
+    match /academicYears/{id}        { allow read: if signedIn(); }
+    match /schools/{id}              { allow read: if signedIn(); }
+    match /documentRequirements/{id} { allow read: if signedIn(); }
+    match /allowanceTypes/{id}       { allow read: if signedIn(); }
+
+    // Notifications: read your own and mark them read. Nothing else.
+    match /notifications/{id} {
+      allow read: if signedIn() && resource.data.uid == request.auth.uid;
+      allow update: if signedIn() && resource.data.uid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'readAt'])
+        && request.resource.data.read == true;
     }
 
-    // Outgoing email queue for the "Trigger Email from Firestore" extension
-    match /mail/{id} {
-      allow create: if signedIn();
-    }
+    // Old-portal collections: preserved, read-only for administrators.
+    match /archivedStudents/{id}   { allow read: if isAdmin(); }
+    match /applications/{id}       { allow read: if isAdmin(); }
+    match /logins/{id}             { allow read: if isAdmin(); }
+    match /attachmentUpdates/{id}  { allow read: if isAdmin(); }
+    match /latinHonorUpdates/{id}  { allow read: if isAdmin(); }
+    match /top20Submissions/{id}   { allow read: if isAdmin(); }
+    match /sync_applications/{id}  { allow read: if isAdmin(); }
+    match /sync_archivedApplications/{id} { allow read: if isAdmin(); }
+    match /sync_accessRequests/{id} { allow read: if isAdmin(); }
+    match /sync_config/{id}        { allow read: if isAdmin(); }
 
-    // ---- Records from the old portal (read-only) -------------------------
-    // Used to pre-fill a returning student's registration form.
-    match /students/{id} {
-      allow read: if signedIn() && (
-        resource.data.emailLower == request.auth.token.email ||
-        resource.data.email == request.auth.token.email);
-    }
+    // Everything else (mail queue, counters, …) is server-only: no rule = denied.
   }
 }
