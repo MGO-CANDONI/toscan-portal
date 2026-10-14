@@ -4,7 +4,7 @@
   "type": "module",
   "main": "index.js",
   "engines": {
-    "node": "20"
+    "node": "22"
   },
   "scripts": {
     "test": "node --test test/policy.test.js test/records.test.js test/sync.test.js && node --import ./test/register.mjs --test test/flows.test.js",

@@ -1,18 +1,36 @@
 // Shared server helpers: Admin SDK, actor checks, audit trail, notifications.
-import { initializeApp, getApps } from "firebase-admin/app";
-import { getFirestore, FieldValue, Timestamp } from "firebase-admin/firestore";
-import { getAuth } from "firebase-admin/auth";
-import { getStorage } from "firebase-admin/storage";
+//
+// The Firebase Admin SDK is loaded on first use, not at import time. Deploying
+// loads this code to discover the functions and gives up after 10 seconds; the
+// Admin SDK alone can take longer than that on Windows. Loading lazily keeps
+// discovery fast and also speeds up cold starts.
+import { createRequire } from "node:module";
 import { HttpsError } from "firebase-functions/v2/https";
 import { mergeSettings, hasPermission, DEFAULT_STAFF_PERMISSIONS, PERMISSIONS } from "./core/policy.js";
 import { fullName } from "./core/records.js";
 
-if (!getApps().length) initializeApp();
-export const db = getFirestore();
-db.settings({ ignoreUndefinedProperties: true });
-export const auth = getAuth();
-export const bucket = () => getStorage().bucket();
-export { FieldValue, Timestamp, HttpsError };
+const require = createRequire(import.meta.url);
+// Tests can supply in-memory replacements (see test/register.mjs).
+const load = name => globalThis.__TOSCAN_FAKES__?.[name] || require(name);
+
+let _app, _db, _auth, _fs;
+function adminApp() {
+  if (!_app) { const { initializeApp, getApps } = load("firebase-admin/app"); _app = getApps()[0] || initializeApp(); }
+  return _app;
+}
+const firestoreModule = () => (_fs ||= load("firebase-admin/firestore"));
+function lazy(get) {
+  return new Proxy({}, { get: (_, key) => { const target = get(); const v = target[key]; return typeof v === "function" ? v.bind(target) : v; } });
+}
+export const db = lazy(() => {
+  if (!_db) { adminApp(); _db = firestoreModule().getFirestore(); _db.settings({ ignoreUndefinedProperties: true }); }
+  return _db;
+});
+export const auth = lazy(() => (_auth ||= (adminApp(), load("firebase-admin/auth").getAuth())));
+export const bucket = () => { adminApp(); return load("firebase-admin/storage").getStorage().bucket(); };
+export const FieldValue = lazy(() => firestoreModule().FieldValue);
+export const Timestamp = lazy(() => firestoreModule().Timestamp);
+export { HttpsError };
 export const now = () => FieldValue.serverTimestamp();
 
 export function fail(code, message) { throw new HttpsError(code, message); }
