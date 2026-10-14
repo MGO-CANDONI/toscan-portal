@@ -46,8 +46,27 @@ async function onAccount() {
     const tok = await auth.currentUser.getIdTokenResult(true);
     S.claims = tok.claims || {};
     if (!S.claims.role) {
-      $("#app").innerHTML = `<div class="center-screen"><div class="card" style="max-width:420px"><h2>Finishing setup…</h2><p class="muted">Your access is being activated. This page refreshes on its own.</p></div></div>`;
-      setTimeout(async () => { const t = await auth.currentUser.getIdTokenResult(true); if (t.claims.role) { claimsStamp = null; onAccount(); } }, 4000);
+      // Approved in Firestore but no role on the sign-in token yet (e.g. approved by the
+      // previous version of the portal). Keep checking, and offer the ways out.
+      screen = "activating";
+      $("#app").innerHTML = `<div class="center-screen"><div class="card" style="max-width:480px">
+        <h2>Activating your access…</h2>
+        <p class="muted">This page refreshes on its own. If nothing happens within a minute, your account was approved in the earlier version of the portal and needs to be activated again:</p>
+        <ul class="small"><li><b>TOSCAN Office administrator:</b> click <b>Claim administrator access</b>.</li><li><b>Everyone else:</b> ask an administrator to open <b>Users &amp; Permissions</b>, select your account and click <b>Save</b>.</li></ul>
+        <div class="btn-row" style="margin-top:1rem"><button class="btn primary" id="act-claim">Claim administrator access</button><button class="btn" id="act-out">Sign out</button></div>
+        <div class="form-msg err" id="act-msg"></div></div></div>`;
+      $("#act-out").onclick = () => signOut(auth);
+      $("#act-claim").onclick = async e => {
+        e.target.disabled = true; $("#act-msg").textContent = "";
+        try { await (await import("./fb.js")).call("bootstrapAdmin"); claimsStamp = null; onAccount(); }
+        catch (err) { $("#act-msg").textContent = err.message; e.target.disabled = false; }
+      };
+      const retry = async () => {
+        if (screen !== "activating" || !auth.currentUser) return;
+        const t = await auth.currentUser.getIdTokenResult(true);
+        if (t.claims.role) { claimsStamp = null; onAccount(); } else setTimeout(retry, 5000);
+      };
+      setTimeout(retry, 5000);
       return;
     }
     startRole(S.claims);
