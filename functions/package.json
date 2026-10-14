@@ -7,7 +7,7 @@
     "node": "22"
   },
   "scripts": {
-    "test": "node --test test/policy.test.js test/records.test.js test/sync.test.js && node --import ./test/register.mjs --test test/flows.test.js",
+    "test": "node --test test/policy.test.js test/records.test.js test/sync.test.js test/region.test.js && node --import ./test/register.mjs --test test/flows.test.js",
     "serve": "firebase emulators:start --only functions,firestore,storage,auth",
     "deploy": "firebase deploy --only functions"
   },
