@@ -15,7 +15,7 @@ const load = name => globalThis.__TOSCAN_FAKES__?.[name] || require(name);
 
 let _app, _db, _auth, _fs;
 function adminApp() {
-  if (!_app) { const { initializeApp, getApps } = load("firebase-admin/app"); _app = getApps()[0] || initializeApp(); }
+  if (!_app) { const { initializeApp, getApps } = load("firebase-admin/app"); _app = getApps().find(a => a.name === "[DEFAULT]") || initializeApp(); }
   return _app;
 }
 const firestoreModule = () => (_fs ||= load("firebase-admin/firestore"));
