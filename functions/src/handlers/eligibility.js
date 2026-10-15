@@ -2,7 +2,7 @@
 // Document approval and eligibility are separate: approved documents only make
 // a period "For Review"; a staff decision makes it Qualified or Not Qualified.
 import { onCall } from "firebase-functions/v2/https";
-import { db, now, actor, audit, notify, bad, notFound, conflict, str, getSettings } from "../fb.js";
+import { db, now, actor, audit, notify, bad, notFound, conflict, str, getSettings, idArg } from "../fb.js";
 import {
   ELIG, ENT, PERIODS, PERIOD_NAMES, periodForTerm, termsForPeriod, termDocState, deriveEligibility,
   eligibilityId, entitlementId, academicRecordId, resolveOpeningDate, typeActiveOn, rateOn, LATIN_LEVELS,
@@ -75,8 +75,11 @@ async function referenceDate(studentId, academicYear, period, settings) {
  */
 export const decideEligibility = onCall(async request => {
   const a = await actor(request, { roles: ["staff", "admin"], perm: "decideEligibility" });
-  const { studentId, academicYear, period, decision, reason } = request.data || {};
-  const codes = [...new Set((request.data?.allowanceTypes || []).map(c => str(c, 30)))];
+  const { academicYear, period, decision, reason } = request.data || {};
+  const studentId = idArg(request.data?.studentId, "TOSCAN ID");
+  const rawCodes = request.data?.allowanceTypes;
+  if (rawCodes != null && !Array.isArray(rawCodes)) bad("Allowance types must be a list.");
+  const codes = [...new Set((rawCodes || []).map(c => idArg(c, "allowance code")))];
   if (!isValidAY(academicYear) || !PERIODS.includes(period)) bad("Choose the academic year and allowance period.");
   if (![ELIG.QUALIFIED, ELIG.NOT_QUALIFIED].includes(decision)) bad("Decision must be Qualified or Not Qualified.");
   if (decision === ELIG.NOT_QUALIFIED && !str(reason)) bad("Give the reason the student is not qualified.");
@@ -157,7 +160,8 @@ export const decideEligibility = onCall(async request => {
 /** Staff can trigger a recalculation (e.g. after changing requirements). */
 export const recalcEligibility = onCall(async request => {
   await actor(request, { roles: ["staff", "admin"], perm: "decideEligibility" });
-  const { studentId, academicYear, period } = request.data || {};
+  const { academicYear, period } = request.data || {};
+  const studentId = idArg(request.data?.studentId, "TOSCAN ID");
   if (!isValidAY(academicYear) || !PERIODS.includes(period)) bad("Choose the academic year and period.");
   return { ok: true, eligibility: await recompute(studentId, academicYear, period) };
 });

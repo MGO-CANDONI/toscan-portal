@@ -1,6 +1,6 @@
 // Student master records, academic history, program status, deadline extensions.
 import { onCall } from "firebase-functions/v2/https";
-import { db, now, actor, audit, notify, bad, notFound, conflict, denied, str, FieldValue } from "../fb.js";
+import { db, now, actor, audit, notify, bad, notFound, conflict, denied, str, FieldValue, idArg } from "../fb.js";
 import { academicRecordId, extensionId, TERMS, TERM_NAMES } from "../core/policy.js";
 import { LATIN_HONORS, CLASSIFICATIONS } from "../core/records.js";
 import { isValidAY, isValidYMD } from "../core/dates.js";
@@ -15,7 +15,8 @@ const ENROLLMENT = ["Enrolled", "Not Enrolled", "On Leave", "Graduated", "Transf
 /** Administrator edit of any field, including locked identity and qualification data (reason required for those). */
 export const adminUpdateStudent = onCall(async request => {
   const a = await actor(request, { roles: ["admin"] });
-  const { studentId, patch = {}, reason } = request.data || {};
+  const { patch = {}, reason } = request.data || {};
+  const studentId = idArg(request.data?.studentId, "TOSCAN ID");
   const ref = db.doc(`students/${studentId}`);
   const snap = await ref.get();
   if (!snap.exists) notFound("Student not found.");
@@ -62,7 +63,8 @@ export const adminUpdateStudent = onCall(async request => {
 /** Active ↔ Ended, with effective date, reason and a permanent history entry. */
 export const setProgramStatus = onCall(async request => {
   const a = await actor(request, { roles: ["admin"] });
-  const { studentId, status, effectiveDate, reason, remarks } = request.data || {};
+  const { status, effectiveDate, reason, remarks } = request.data || {};
+  const studentId = idArg(request.data?.studentId, "TOSCAN ID");
   if (!["Active", "Ended"].includes(status)) bad("Status must be Active or Ended.");
   if (!isValidYMD(effectiveDate)) bad("Enter the effective date.");
   if (!str(reason)) bad("Give the reason for this change.");
@@ -122,7 +124,7 @@ export const submitAcademicRecord = onCall(async request => {
     if (!ss.exists) notFound("Student record not found.");
     const s = ss.data(), prev = rs.exists ? rs.data() : null;
     const base = prev?.status === "Verified" ? prev : (s.current || {});
-    const significant = !!base.school && ["school", "level", "program"].some(k => (base[k] || "") !== (values[k] || "") && !(k === "level" && !base[k]));
+    const significant = !base.school || ["school", "level", "program"].some(k => (base[k] || "") !== (values[k] || "") && !(k === "level" && !base[k]));
     const status = a.role !== "student" ? "Verified" : significant ? "For Verification" : (prev?.status === "Rejected" ? "For Verification" : "Verified");
     const record = {
       studentId, academicYear: d.academicYear, term: d.term, ...values, status,
@@ -144,7 +146,8 @@ export const submitAcademicRecord = onCall(async request => {
 /** Staff verify or reject a term record, and may set the term's opening date for deadline purposes. */
 export const verifyAcademicRecord = onCall(async request => {
   const a = await actor(request, { roles: ["staff", "admin"], perm: "verifyRecords" });
-  const { id, decision, remarks, openingDate } = request.data || {};
+  const { decision, remarks, openingDate } = request.data || {};
+  const id = idArg(request.data?.id, "record id");
   if (!["verify", "reject", "setOpening"].includes(decision)) bad("Unknown decision.");
   if (openingDate && !isValidYMD(openingDate)) bad("Invalid opening date.");
   if (decision === "reject" && !str(remarks)) bad("Give the reason for rejecting this record.");
@@ -178,7 +181,8 @@ export const verifyAcademicRecord = onCall(async request => {
 /** Administrator-approved deadline extension for one student-term. */
 export const grantExtension = onCall(async request => {
   const a = await actor(request, { roles: ["admin"] });
-  const { studentId, academicYear, term, deadline, reason } = request.data || {};
+  const { academicYear, term, deadline, reason } = request.data || {};
+  const studentId = idArg(request.data?.studentId, "TOSCAN ID");
   if (!isValidAY(academicYear) || !TERMS.includes(term)) bad("Choose the academic year and term.");
   if (!isValidYMD(deadline)) bad("Enter the new deadline.");
   if (!str(reason)) bad("Give the reason for the extension.");

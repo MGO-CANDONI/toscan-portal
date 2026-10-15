@@ -178,7 +178,7 @@ async function uploadDoc(input, main) {
   if (!ok) { input.value = ""; return; }
   const id = doc(collection(db, "submissions")).id;
   const safe = file.name.replace(/[^\w.\- ]+/g, "_").slice(-120);
-  const bar = $(`[data-prog="${code}"]`, main);
+  const bar = $(`[data-prog="${CSS.escape(code)}"]`, main);
   bar?.classList.remove("hidden");
   try {
     const task = uploadBytesResumable(ref(storage, `documents/${st().studentId}/${id}/${safe}`), file, { contentType: file.type });

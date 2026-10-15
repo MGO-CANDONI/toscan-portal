@@ -1,6 +1,6 @@
 // Accounts: first-admin bootstrap, registration, approval, roles, profile updates.
 import { onCall } from "firebase-functions/v2/https";
-import { db, auth, now, actor, audit, notify, admins, bad, denied, notFound, conflict, str, FieldValue } from "../fb.js";
+import { db, auth, now, actor, audit, notify, admins, bad, denied, notFound, conflict, str, FieldValue, idArg } from "../fb.js";
 import { ROLES, PERMISSIONS, DEFAULT_STAFF_PERMISSIONS } from "../core/policy.js";
 import { validateRegistration, fullName, CLASSIFICATIONS } from "../core/records.js";
 import { manilaToday, isValidYMD } from "../core/dates.js";
@@ -41,6 +41,7 @@ export const register = onCall(async request => {
   if (!request.auth) bad("Please sign in first.");
   const uid = request.auth.uid, email = request.auth.token.email || "";
   if (!email) bad("Your sign-in has no email address.");
+  if (!request.auth.token.email_verified) bad("Please verify your email address first: open the verification link we sent, then sign in again.");
   const ref = db.doc(`users/${uid}`);
   const existing = await ref.get();
   if (existing.exists && ["approved", "disabled"].includes(existing.data().status)) conflict("This account is already registered.");
@@ -98,11 +99,13 @@ function newStudentFromRegistration(id, uid, email, r) {
 export const decideUser = onCall(async request => {
   const a = await actor(request, { roles: ["admin"] });
   const d = request.data || {};
+  d.uid = idArg(d.uid, "account id", /^[A-Za-z0-9_.-]{1,128}$/);
   const ref = db.doc(`users/${d.uid}`);
   const snap = await ref.get();
   if (!snap.exists) notFound("Account not found.");
   const u = snap.data();
   if (d.uid === a.uid) denied("You can't approve your own account.");
+  if (!["pending", "declined"].includes(u.status)) conflict(`This account is already ${u.status}. Use Users & Permissions to change its access.`);
 
   if (d.decision === "decline") {
     await ref.update({ status: "declined", note: str(d.note, 500), decidedAt: now(), decidedBy: { uid: a.uid, name: a.name } });
@@ -170,11 +173,13 @@ export const decideUser = onCall(async request => {
 export const updateAccess = onCall(async request => {
   const a = await actor(request, { roles: ["admin"] });
   const d = request.data || {};
+  d.uid = idArg(d.uid, "account id", /^[A-Za-z0-9_.-]{1,128}$/);
   if (d.uid === a.uid) denied("You can't change your own access. Ask another administrator.");
   const ref = db.doc(`users/${d.uid}`);
   const snap = await ref.get();
   if (!snap.exists) notFound("Account not found.");
   const before = snap.data();
+  if (!["approved", "disabled"].includes(before.status)) conflict("Only approved or disabled accounts can be changed here; decide pending registrations under Registrations.");
   const patch = {};
   if (d.role) {
     if (!ROLES.includes(d.role)) bad("Invalid role.");
@@ -209,8 +214,9 @@ export const updateMyProfile = onCall(async request => {
   if (a.role !== "student") {
     const patch = {};
     if (d.photoPath !== undefined) {
-      if (d.photoPath && !d.photoPath.startsWith(`photos/${a.uid}/`)) bad("Invalid photo location.");
-      patch.photoPath = d.photoPath;
+      const p = str(d.photoPath, 300);
+      if (p && !new RegExp(`^photos/${a.uid}/[^/]+$`).test(p)) bad("Invalid photo location.");
+      patch.photoPath = p;
     }
     if (d.displayName) patch.displayName = str(d.displayName, 120);
     await db.doc(`users/${a.uid}`).update({ ...patch, updatedAt: now() });
@@ -227,12 +233,14 @@ export const updateMyProfile = onCall(async request => {
   }
   if (d.address !== undefined) { if (!str(d.address)) bad("Address can't be empty."); direct.address = str(d.address, 300).toUpperCase(); }
   if (d.photoPath !== undefined) {
-    if (d.photoPath && !d.photoPath.startsWith(`photos/${a.uid}/`)) bad("Invalid photo location.");
-    direct.photoPath = d.photoPath;
+    const p = str(d.photoPath, 300);
+    if (p && !new RegExp(`^photos/${a.uid}/[^/]+$`).test(p)) bad("Invalid photo location.");
+    direct.photoPath = p;
   }
-  if (d.dateOfBirth && d.dateOfBirth !== s.dateOfBirth) {
-    if (!isValidYMD(d.dateOfBirth)) bad("Invalid date of birth.");
-    pending.dateOfBirth = { value: d.dateOfBirth, requestedAt: new Date().toISOString() };
+  const dob = str(d.dateOfBirth, 10);
+  if (dob && dob !== s.dateOfBirth) {
+    if (!isValidYMD(dob)) bad("Invalid date of birth.");
+    pending.dateOfBirth = { value: dob, requestedAt: new Date().toISOString() };
   }
   if (d.atmNumber !== undefined && str(d.atmNumber, 40) !== (s.atmNumber || "")) {
     if (!/^[\d -]{6,40}$/.test(str(d.atmNumber, 40))) bad("ATM number can contain digits, spaces and dashes only.");
@@ -249,8 +257,10 @@ export const updateMyProfile = onCall(async request => {
 /** Staff verify or reject a pending identity/payment change. */
 export const verifyProfileChange = onCall(async request => {
   const a = await actor(request, { roles: ["staff", "admin"], perm: "verifyRecords" });
-  const { studentId, field, decision, remarks } = request.data || {};
+  const { field, decision, remarks } = request.data || {};
+  const studentId = idArg(request.data?.studentId, "TOSCAN ID");
   if (!["dateOfBirth", "atmNumber"].includes(field)) bad("Unknown field.");
+  if (!["approve", "reject"].includes(decision)) bad("Decision must be approve or reject.");
   const sref = db.doc(`students/${studentId}`);
   const snap = await sref.get();
   if (!snap.exists) notFound("Student not found.");

@@ -14,7 +14,8 @@ const staff = () => u("staff", { role: "staff" });
 const admin = () => u("admin", { role: "admin" });
 const pending = () => u("newbie");
 const anon = () => env.unauthenticatedContext();
-const anonSignIn = (uid = "anon1") => env.authenticatedContext(uid, { firebase: { sign_in_provider: "anonymous" } });
+const anonSignIn = (uid = "anon1", extra = {}) => env.authenticatedContext(uid, { firebase: { sign_in_provider: "anonymous" }, ...extra });
+const ticket = (uid, ref, expired = false) => anonSignIn(uid, { bidbookRef: ref, bidbookExp: Date.now() + (expired ? -60e3 : 10 * 60e3) });
 const pdf = new Uint8Array([37, 80, 68, 70]);
 
 before(async () => {
@@ -135,7 +136,10 @@ test("search applications: public form settings, private applications, finalist 
   await assertFails(setDoc(doc(anonSignIn().firestore(), "searchApplications/TS2027-9999"), { status: "Top 10 Awardee" }));
   // anonymous sign-ins are not "signed in" for portal data
   await assertFails(getDoc(doc(anonSignIn().firestore(), "settings/app")));
-  const s = anonSignIn("anon1").storage();
+  await assertFails(uploadBytes(ref(anonSignIn("anon0").storage(), "searchApplications/TS2027-0001/anon0/bidbook.pdf"), pdf, { contentType: "application/pdf" })); // no ticket
+  await assertFails(uploadBytes(ref(ticket("anon9", "TS2027-0001", true).storage(), "searchApplications/TS2027-0001/anon9/bidbook.pdf"), pdf, { contentType: "application/pdf" })); // expired ticket
+  await assertFails(uploadBytes(ref(ticket("anon8", "TS2027-0002").storage(), "searchApplications/TS2027-0001/anon8/bidbook.pdf"), pdf, { contentType: "application/pdf" })); // ticket for another application
+  const s = ticket("anon1", "TS2027-0001").storage();
   await assertSucceeds(uploadBytes(ref(s, "searchApplications/TS2027-0001/anon1/bidbook.pdf"), pdf, { contentType: "application/pdf" }));
   await assertFails(uploadBytes(ref(s, "searchApplications/TS2027-0001/anon1/bidbook.pdf"), pdf, { contentType: "application/pdf" })); // no overwrite
   await assertFails(uploadBytes(ref(s, "searchApplications/TS2027-0001/anon2/bidbook.pdf"), pdf, { contentType: "application/pdf" })); // someone else's folder

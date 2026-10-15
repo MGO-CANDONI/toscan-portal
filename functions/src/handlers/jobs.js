@@ -5,7 +5,7 @@ import { logger } from "firebase-functions";
 import { db, notify, getSettings, usersWith } from "../fb.js";
 import { windowFor } from "./documents.js";
 import { generatePayrollCore } from "./payroll.js";
-import { windowState, requirementApplies, latestByRequirement, TERM_NAMES, DOC_STATUS, PAYROLL, ELIG } from "../core/policy.js";
+import { windowState, termDocState, TERM_NAMES, DOC_STATUS, PAYROLL, ELIG } from "../core/policy.js";
 import { manilaToday, manilaMonth, manilaDayOfMonth } from "../core/dates.js";
 
 export async function runDailyJobs(nowDate = new Date()) {
@@ -28,8 +28,8 @@ export async function runDailyJobs(nowDate = new Date()) {
       const { win } = await windowFor(rec.studentId, ay, rec.term, settings);
       if (!win.closesAt) continue;
       const subs = (await db.collection("submissions").where("studentId", "==", rec.studentId).where("academicYear", "==", ay).where("term", "==", rec.term).get()).docs.map(d => d.data());
-      const latest = latestByRequirement(subs);
-      const missing = reqs.filter(q => requirementApplies(q, rec.term) && (!latest[q.code] || latest[q.code].status === DOC_STATUS.RETURNED));
+      const ds = termDocState(reqs, subs, rec.term);
+      const missing = reqs.filter(q => ds.missing.includes(q.code) || ds.returned.includes(q.code));
       if (!missing.length) continue;
       const state = windowState(win, nowDate);
       const daysLeft = Math.ceil((win.closesAt - nowDate) / 86400000);
@@ -64,6 +64,6 @@ export async function runDailyJobs(nowDate = new Date()) {
   return report;
 }
 
-export const dailyJobs = onSchedule({ schedule: "0 6 * * *", timeZone: "Asia/Manila", retryCount: 1 }, async () => {
+export const dailyJobs = onSchedule({ schedule: "0 6 * * *", timeZone: "Asia/Manila", retryCount: 1, timeoutSeconds: 540, memory: "512MiB" }, async () => {
   await runDailyJobs();
 });

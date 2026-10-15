@@ -154,7 +154,7 @@ export async function notifications(main) {
     <div class="card flush">${list.length ? `<ul class="notes">${list.map(n => `
       <li class="${n.read ? "" : "unread"}" data-id="${esc(n.id)}"><span class="kind ${esc(n.kind || "")}"></span>
         <div style="flex:1"><b>${esc(n.title)}</b><div class="small">${esc(n.body)}</div><div class="xs muted">${fmtDateTime(n.createdAt)}</div></div>
-        ${n.link ? `<a class="btn sm" href="${esc(n.link)}">Open</a>` : ""}</li>`).join("")}</ul>` : `<div class="empty">No notifications yet.</div>`}</div>`;
+        ${n.link && n.link.startsWith("#/") ? `<a class="btn sm" href="${esc(n.link)}">Open</a>` : ""}</li>`).join("")}</ul>` : `<div class="empty">No notifications yet.</div>`}</div>`;
   const mark = ids => Promise.all(ids.map(id => updateDoc(doc(db, "notifications", id), { read: true, readAt: serverTimestamp() })));
   $("#read-all").onclick = e => busy(e.target, () => mark(list.filter(n => !n.read).map(n => n.id)));
   $$(".notes li a", main).forEach(a => a.addEventListener("click", () => { const id = a.closest("li").dataset.id; const n = list.find(x => x.id === id); if (n && !n.read) mark([id]); }));

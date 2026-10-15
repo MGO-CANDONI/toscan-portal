@@ -3,7 +3,7 @@
 // ID and can be attached to one payroll at a time, inside a transaction, so a
 // repeated or concurrent generation can never pay it twice.
 import { onCall } from "firebase-functions/v2/https";
-import { db, now, actor, audit, notify, usersWith, bad, notFound, conflict, str, getSettings } from "../fb.js";
+import { db, now, actor, audit, notify, usersWith, bad, notFound, conflict, str, getSettings, idArg } from "../fb.js";
 import { ENT, ELIG, PAYROLL, PERIOD_NAMES, payrollNumber, checkPayrollAction, eligibilityId, roundPesos } from "../core/policy.js";
 import { manilaToday, manilaMonth } from "../core/dates.js";
 import { fullName } from "../core/records.js";
@@ -100,14 +100,15 @@ export const generatePayroll = onCall(async request => {
 
 async function setEligibilityStatus(items, status) {
   const ids = [...new Set(items.map(i => eligibilityId(i.studentId, i.academicYear, i.period)))];
-  await chunkedWrites(ids.map(id => b => b.update(db.doc(`eligibility/${id}`), { status, updatedAt: now() })));
+  await chunkedWrites(ids.map(id => b => b.set(db.doc(`eligibility/${id}`), { status, updatedAt: now() }, { merge: true })));
 }
 
 /** data: { payrollNo, action, itemId?, dvNo?, paymentDate?, paymentRef?, reason? }
  * submitReview = the prepared payroll is forwarded to the Accounting Office under a DV number. */
 export const payrollAction = onCall(async request => {
   const a = await actor(request, { roles: ["staff", "admin"] });
-  const { payrollNo, action } = request.data || {};
+  const { action } = request.data || {};
+  const payrollNo = idArg(request.data?.payrollNo, "payroll number");
   const input = { paymentDate: request.data?.paymentDate, paymentRef: str(request.data?.paymentRef, 120), dvNo: str(request.data?.dvNo, 60), reason: str(request.data?.reason, 500) };
   const pref = db.doc(`payrolls/${payrollNo}`);
   const settings = await getSettings();
@@ -142,10 +143,12 @@ export const payrollAction = onCall(async request => {
     if (!item) notFound("That line is not in this payroll.");
     if (!input.reason) bad("Give the reason for removing this line.");
     await db.runTransaction(async tx => {
-      const es = await tx.get(entRef(item));
+      const [ps, es, is] = await Promise.all([tx.get(pref), tx.get(entRef(item)), tx.get(item.ref)]);
+      const err = checkPayrollAction(ps.data(), "removeItem", a, input); if (err) conflict(err); // re-checked: status may have moved on
+      if (!is.exists || is.data().status !== "Included") conflict("That line was already removed.");
       tx.update(item.ref, { status: "Removed", removedReason: input.reason, removedBy: { uid: a.uid, name: a.name } });
       if (es.exists && es.data().payrollNo === payrollNo) tx.update(entRef(item), { status: ENT.AWAITING, payrollId: null, payrollNo: null, updatedAt: now() });
-      tx.update(pref, { history: [...(before.history || []), entry] });
+      tx.update(pref, { history: [...(ps.data().history || []), entry], updatedAt: now() });
     });
     await recalcTotals(payrollNo);
   } else if (action === "approve") {

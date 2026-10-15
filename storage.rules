@@ -42,11 +42,16 @@ service firebase.storage {
     }
 
     // Bidbooks from TOSCAN search finalists: searchApplications/{ref}/{uid}/{fileName}.
-    // Uploaded with an anonymous sign-in from the public page; the server checks the
-    // reference number, access code and finalist status before accepting the file.
+    // Uploaded with an anonymous sign-in that holds a short-lived upload ticket
+    // (custom claims set by bidbookTicket after the access code was verified).
+    function hasTicket(appRef) {
+      return request.auth != null
+        && request.auth.token.get('bidbookRef', '') == appRef
+        && request.auth.token.get('bidbookExp', 0) > request.time.toMillis();
+    }
     match /searchApplications/{appRef}/{uid}/{fileName} {
       allow read: if isStaff();
-      allow create: if request.auth != null && request.auth.uid == uid
+      allow create: if hasTicket(appRef) && request.auth.uid == uid
         && appRef.matches('^TS[0-9]{4}-[0-9]{4,6}$')
         && fileName.matches('^[A-Za-z0-9_.-]{1,80}$')
         && sizeUnder(25) && request.resource.contentType == 'application/pdf';

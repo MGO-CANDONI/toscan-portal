@@ -130,10 +130,10 @@ async function importHistorical(a, rows, dryRun, importId, meta) {
 export const importRecords = onCall({ timeoutSeconds: 300, memory: "512MiB" }, async request => {
   const a = await actor(request, { roles: ["staff", "admin"] });
   const { kind, rows, dryRun = true } = request.data || {};
-  if (!Array.isArray(rows) || !rows.length) bad("The file has no rows.");
+  if (!Array.isArray(rows) || !rows.length || rows.some(r => !r || typeof r !== "object" || Array.isArray(r))) bad("The file has no rows.");
   if (rows.length > MAX_ROWS) bad(`Import at most ${MAX_ROWS} rows at a time.`);
   const attachmentPath = str(request.data?.attachmentPath, 300);
-  if (attachmentPath && !attachmentPath.startsWith("historical/")) bad("Invalid attachment location.");
+  if (attachmentPath && !/^historical\/[A-Za-z0-9_-]+\/[^/]+$/.test(attachmentPath)) bad("Invalid attachment location.");
   const importId = db.collection("imports").doc().id;
   let results;
   if (kind === "students") {

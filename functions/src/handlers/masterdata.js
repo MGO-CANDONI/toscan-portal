@@ -1,6 +1,6 @@
 // Master data and settings (administrator only, audited).
 import { onCall } from "firebase-functions/v2/https";
-import { db, now, actor, audit, bad, notFound, str, getSettings } from "../fb.js";
+import { db, now, actor, audit, bad, notFound, str, getSettings, idArg } from "../fb.js";
 import {
   DEFAULT_SETTINGS, TERMS, validateTermPeriodMap, validateRates, rateHistoryPreserved, PERIODS
 } from "../core/policy.js";
@@ -92,7 +92,7 @@ function cleanSettings(d, current) {
   };
   if (d.branding) {
     const p = str(d.branding.loginImagePath, 300);
-    if (p && !p.startsWith("branding/")) bad("Login image must be uploaded under branding/.");
+    if (p && !/^branding\/[^/]+$/.test(p)) bad("Login image must be uploaded under branding/.");
     out.branding = { loginImagePath: p };
   }
   return out;
@@ -140,6 +140,7 @@ function cleanAllowanceType(code, d, old) {
   if (d.effectiveDate && !isValidYMD(d.effectiveDate)) bad("Invalid effective date.");
   if (d.endDate && !isValidYMD(d.endDate)) bad("Invalid end date.");
   const latin = d.appliesTo === "latinHonor";
+  if (d.rates != null && !Array.isArray(d.rates)) bad("Rates must be a list.");
   const rates = (d.rates || []).map(r => ({ amount: Number(r.amount), effectiveFrom: r.effectiveFrom, ...(r.effectiveTo ? { effectiveTo: r.effectiveTo } : {}), ...(r.level ? { level: str(r.level, 40) } : {}) }));
   if (old && (old.appliesTo === "latinHonor") !== latin && (old.rates || []).length) bad("\"Applies to\" can't be changed once the type has rates. Add a new allowance type instead.");
   const e1 = validateRates(rates, { levels: latin }); if (e1) bad(e1);
@@ -159,19 +160,24 @@ function cleanAllowanceType(code, d, old) {
 /** data: { kind: "settings"|"academicYear"|"school"|"requirement"|"allowanceType"|"applicationForm", id?, data } */
 export const saveMasterData = onCall(async request => {
   const a = await actor(request, { roles: ["admin"] });
-  const { kind, id, data = {}, reason } = request.data || {};
+  const { kind, data = {}, reason } = request.data || {};
+  if (!data || typeof data !== "object" || Array.isArray(data)) bad("Invalid data.");
+  const id = request.data?.id == null || request.data.id === "" ? null : idArg(request.data.id, "id");
   let ref, value, merge = false;
   if (kind === "settings") {
     ref = db.doc("settings/app"); value = cleanSettings(data, await getSettings(true)); merge = true;
   } else if (kind === "academicYear") {
+    if (!id) bad("Academic year is required.");
     ref = db.doc(`academicYears/${id}`); value = cleanAcademicYear(id, data);
   } else if (kind === "school") {
     ref = id ? db.doc(`schools/${id}`) : db.collection("schools").doc();
     if (id && !(await ref.get()).exists) notFound("School not found.");
     value = cleanSchool(data);
   } else if (kind === "requirement") {
+    if (!id) bad("Requirement code is required.");
     ref = db.doc(`documentRequirements/${id}`); value = cleanRequirement(id, data);
   } else if (kind === "allowanceType") {
+    if (!id) bad("Allowance code is required.");
     ref = db.doc(`allowanceTypes/${id}`);
     const old = await ref.get();
     value = cleanAllowanceType(id, data, old.exists ? old.data() : null);
@@ -183,7 +189,7 @@ export const saveMasterData = onCall(async request => {
 
   const beforeSnap = await ref.get();
   const before = beforeSnap.exists ? beforeSnap.data() : null;
-  await ref.set({ ...value, updatedAt: now(), updatedBy: { uid: a.uid, name: a.name }, ...(before ? {} : { createdAt: now() }) }, { merge });
+  await ref.set({ ...value, updatedAt: now(), updatedBy: { uid: a.uid, name: a.name }, createdAt: before?.createdAt || now() }, { merge });
   await audit(a, `masterdata.${kind}`, { type: kind, id: ref.id }, { before, after: value, reason: str(reason, 300) });
   return { ok: true, id: ref.id };
 });

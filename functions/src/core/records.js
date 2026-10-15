@@ -193,6 +193,7 @@ export function validateStudentImportRow(row) {
     programStatus: /ended/i.test(pick(row, "programstatus", "status")) ? "Ended" : "Active"
   };
   if (!v.surname || !v.firstName) errors.push("Surname and first name are required.");
+  if (v.toscanId && !/^[A-Z0-9-]{3,40}$/.test(v.toscanId)) errors.push("TOSCAN ID may contain letters, digits and dashes only (3–40 characters).");
   if (v.dateOfBirth === null) errors.push("Date of birth is not a valid date.");
   if (v.admissionDate === null) errors.push("Admission date is not a valid date.");
   if (cls === null) errors.push("Classification must be Top 10 or Top 20.");

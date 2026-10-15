@@ -50,13 +50,13 @@ export function overview(main) {
   const apps = (S.d.applications || []);
   const newApps = apps.filter(a => a.status === "Submitted").length, newBids = apps.filter(a => a.status === "Bidbook Submitted").length;
 
-  const row = (icon, cls, title, sub, n, href) => `<li><a href="${href}"><span class="ic ${cls}">${icon}</span><span class="t"><b>${esc(title)}</b><span>${esc(sub)}</span></span><span class="n">${n}</span></a></li>`;
+  const row = (icon, cls, title, sub, n, href) => `<li><a href="${esc(href)}"><span class="ic ${cls}">${icon}</span><span class="t"><b>${esc(title)}</b><span>${esc(sub)}</span></span><span class="n">${n}</span></a></li>`;
   const items = [
     isAdmin() && c.pending && row(I.user, "red", "Registrations to approve", "New accounts waiting for approval", c.pending, "#/approvals"),
     c.queue && row(I.doc, "", "Documents to review", oldest[0] ? `Oldest from ${sname(oldest[0].studentId)}, ${fmtDate(oldest[0].submittedAt)}` : "", c.queue, "#/review"),
     c.verify && row(I.check, "blue", "Records to verify", "Enrollment, identity and ATM changes", c.verify, "#/verify"),
     c.decide && row(I.star, "", "Eligibility decisions", "Students with complete documents for the period", c.decide, "#/eligibility"),
-    ...pays.map(p => row(I.cash, "green", `Payroll ${p.payrollNo} — ${p.status}`, `${money(p.total)} · ${p.itemCount || 0} line${p.itemCount === 1 ? "" : "s"}`, "Open", `#/payroll/${p.payrollNo}`)),
+    ...pays.map(p => row(I.cash, "green", `Payroll ${p.payrollNo} — ${p.status}`, `${money(p.total)} · ${p.itemCount || 0} line${p.itemCount === 1 ? "" : "s"}`, "Open", `#/payroll/${encodeURIComponent(p.payrollNo)}`)),
     newApps && row(I.mail, "", "Applications to screen", "New TOSCAN search applications", newApps, "#/applications"),
     newBids && row(I.mail, "", "Bidbooks received", "Finalists who uploaded a bidbook", newBids, "#/applications")
   ].filter(Boolean);

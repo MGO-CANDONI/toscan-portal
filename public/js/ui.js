@@ -1,6 +1,8 @@
 // UI helpers shared by every screen.
 export const $ = (s, el = document) => el.querySelector(s);
 export const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+/** Only http(s) links are rendered as links; anything else (e.g. javascript:) is dropped. */
+export const safeUrl = u => (/^https?:\/\/[^\s]+$/i.test(String(u || "")) ? String(u) : "");
 export const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 export const TERM_NAMES = { T1: "First Semester", T2: "Second Semester", T3: "Third Semester" };

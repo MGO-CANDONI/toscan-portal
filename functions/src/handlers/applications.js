@@ -2,7 +2,7 @@
 // access code, bidbook upload for Top 20 finalists, and staff review.
 import { onCall } from "firebase-functions/v2/https";
 import { createHash, randomInt } from "node:crypto";
-import { db, now, actor, audit, notify, usersWith, bad, notFound, conflict, fail, str, getSettings, bucket } from "../fb.js";
+import { db, auth, now, actor, audit, notify, usersWith, bad, notFound, conflict, fail, str, getSettings, bucket, throttle } from "../fb.js";
 import {
   APP_STATUS, APP_TRANSITIONS, APP_STATUS_TEXT, BIDBOOK_MAX_MB, mergeApplicationConfig, applicationsOpen, bidbookOpen,
   validateApplication, applicantKey, applicantKeys
@@ -33,6 +33,7 @@ async function mailApplicant(to, subject, html) {
 
 /** Public: submit an application. No sign-in needed. Returns the reference number and access code (shown once). */
 export const submitApplication = onCall(async request => {
+  await throttle(request, "apply", 5, 60);
   const config = await getApplicationConfig();
   const today = manilaToday();
   if (!applicationsOpen(config, today)) conflict("Applications are not being accepted right now.");
@@ -103,19 +104,39 @@ function publicView(ref, a, config) {
 
 /** Public: application status by reference number and access code. */
 export const applicationStatus = onCall(async request => {
+  await throttle(request, "status", 40, 60);
   const { ref, a } = await openWithCode(request.data?.ref, request.data?.code);
   return publicView(ref, a, await getApplicationConfig());
 });
 
+const isAnonymous = request => request.auth?.token?.firebase?.sign_in_provider === "anonymous";
+const notOpenMsg = a => (a.status === APP_STATUS.FINALIST || a.status === APP_STATUS.BIDBOOK ? "The bidbook deadline has passed." : "Bidbooks are accepted only from Top 20 finalists.");
+const TICKET_MINUTES = 20;
+
 /**
- * Finalists only: records an uploaded bidbook. The browser uploads first (anonymous
- * sign-in, path searchApplications/{ref}/{uid}/...), then calls this with the path.
+ * Step 1 of a bidbook upload. The browser signs in anonymously and asks for an upload
+ * ticket with the reference number and access code. The ticket is a short-lived custom
+ * claim on that anonymous user; Storage rules accept uploads only with a valid ticket.
+ */
+export const bidbookTicket = onCall(async request => {
+  await throttle(request, "ticket", 20, 60);
+  if (!request.auth || !isAnonymous(request)) bad("The upload session expired. Please try again.");
+  const { ref, a } = await openWithCode(request.data?.ref, request.data?.code);
+  const config = await getApplicationConfig();
+  if (!bidbookOpen(a.status, config, manilaToday())) conflict(notOpenMsg(a));
+  const exp = Date.now() + TICKET_MINUTES * 60e3;
+  await auth.setCustomUserClaims(request.auth.uid, { bidbookRef: ref, bidbookExp: exp });
+  return { ref, expiresAt: exp, maxMB: BIDBOOK_MAX_MB };
+});
+
+/**
+ * Step 2: records the uploaded file (path searchApplications/{ref}/{uid}/...).
  */
 export const submitBidbook = onCall(async request => {
-  if (!request.auth) bad("The upload session expired. Please try again.");
+  if (!request.auth || !isAnonymous(request)) bad("The upload session expired. Please try again.");
   const { ref, docRef, a } = await openWithCode(request.data?.ref, request.data?.code);
   const config = await getApplicationConfig();
-  if (!bidbookOpen(a.status, config, manilaToday())) conflict(a.status === APP_STATUS.FINALIST || a.status === APP_STATUS.BIDBOOK ? "The bidbook deadline has passed." : "Bidbooks are accepted only from Top 20 finalists.");
+  if (!bidbookOpen(a.status, config, manilaToday())) conflict(notOpenMsg(a));
   const path = String(request.data?.path || "");
   const prefix = `searchApplications/${ref}/${request.auth.uid}/`;
   if (!path.startsWith(prefix) || path.slice(prefix.length).includes("/")) bad("Invalid file.");
@@ -133,6 +154,7 @@ export const submitBidbook = onCall(async request => {
     updatedAt: now()
   });
   await audit(APPLICANT, "application.bidbook", { type: "searchApplication", id: ref }, { after: { fileName: entry.fileName, size: entry.size, version: history.length } });
+  await auth.setCustomUserClaims(request.auth.uid, {}).catch(() => {}); // the ticket is single-use
   await notify(await usersWith("reviewApplications"), { title: "Bidbook received", body: `${a.lastName}, ${a.firstName} (${ref}) uploaded a bidbook${history.length > 1 ? ` (copy ${history.length})` : ""}.`, link: "#/applications", kind: "info", email: false });
   return publicView(ref, { ...a, bidbook: entry, status: APP_STATUS.BIDBOOK }, config);
 });

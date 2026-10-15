@@ -83,6 +83,21 @@ Delivered as one release covering phases 1–7 of the enhancement requirements.
 - **Application confirmation email.** Every applicant is emailed their reference number and access code on submission (and again when selected as a finalist or when results are recorded), independent of the portal-users email switch. Requires the Trigger Email extension (DEPLOYMENT.md §3).
 - **One application per student.** A second application in the same search is refused when the e-mail address, the contact number, or the full name already exists on the list; the message says which one matched.
 
+## Security review — October 16, 2026
+
+Fixed after a review of the rules, Cloud Functions and web app:
+
+- **Bidbook uploads need a ticket.** An anonymous sign-in can no longer upload into Storage on its own; it must first obtain a 20-minute upload ticket by presenting a valid reference number and access code (`bidbookTicket`). Storage rules check the ticket. This closes a way to fill the bucket with junk files.
+- **Rate limits on the public endpoints** (apply, status check, upload ticket), per connection.
+- **Registration requires a verified email**, so nobody can register with an address they don't control and be matched to that person's record.
+- **Approved documents can't be deleted through re-submission.** A failed re-submission with an existing submission id no longer deletes the stored file.
+- **Reminder notifications are sent once**, not every day (deadline and overdue notices).
+- **Payroll:** approving or releasing a payroll that contains an imported unpaid allowance (which has no eligibility record) no longer fails halfway; removing a line is re-checked inside the transaction so it can't revert an approved payroll.
+- **Input validation:** every record id, code and file path from the browser is validated before use (invalid values now return a clear error instead of a server error); import rows and TOSCAN IDs are checked; master-data saves keep `createdAt`.
+- **Accounts:** registrations can only be decided while pending/declined; Users & Permissions only changes approved/disabled accounts; profile photo paths are validated.
+- **Daily job** runs with a 9-minute limit and more memory so it finishes as data grows; its reminder logic now matches the compliance rules (optional documents don't trigger reminders).
+- **Web app:** remaining unescaped values escaped; external links on the public page and notification links are rendered only when they are http(s) / in-app links.
+
 ## Outstanding items
 
 1. Run the security-rules tests and a pilot with real accounts on the deployed project before announcing the portal.

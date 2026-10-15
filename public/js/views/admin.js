@@ -175,7 +175,7 @@ function schools(el) {
   const list = S.master.schools, ays = S.master.academicYears.map(a => a.id);
   el.innerHTML = `<div class="card"><div class="card-head"><h3>Schools</h3><button class="btn primary" id="add">Add school</button></div>
     <div class="table-wrap"><table><thead><tr><th>School</th><th>Address</th><th>Terms / year</th><th>Own calendar</th><th>Status</th><th></th></tr></thead><tbody>
-    ${list.map(s => `<tr><td><b>${esc(s.name)}</b></td><td class="small">${esc(s.address)}</td><td>${s.termsPerYear}</td><td class="small">${Object.keys(s.calendars || {}).join(", ") || "Uses defaults"}</td><td>${s.active === false ? "<span class='badge'>Inactive</span>" : "<span class='badge b-ok'>Active</span>"}</td><td><button class="btn sm" data-e="${esc(s.id)}">Edit</button></td></tr>`).join("") || `<tr><td colspan="6" class="empty">No schools yet.</td></tr>`}</tbody></table></div></div>`;
+    ${list.map(s => `<tr><td><b>${esc(s.name)}</b></td><td class="small">${esc(s.address)}</td><td>${esc(s.termsPerYear)}</td><td class="small">${esc(Object.keys(s.calendars || {}).join(", ") || "Uses defaults")}</td><td>${s.active === false ? "<span class='badge'>Inactive</span>" : "<span class='badge b-ok'>Active</span>"}</td><td><button class="btn sm" data-e="${esc(s.id)}">Edit</button></td></tr>`).join("") || `<tr><td colspan="6" class="empty">No schools yet.</td></tr>`}</tbody></table></div></div>`;
   const edit = s => {
     const m = openModal(`<h2>${s ? esc(s.name) : "Add school"}</h2><form class="grid g2" id="sf">
       ${fieldHtml({ name: "name", label: "School name", value: s?.name, required: true, span: "spanall" })}
@@ -183,7 +183,7 @@ function schools(el) {
       ${fieldHtml({ name: "termsPerYear", label: "Academic terms per year", type: "select", options: [[2, "2 semesters"], [3, "3 terms (trimester)"]], value: s?.termsPerYear || 2 })}
       ${fieldHtml({ name: "active", label: "Active", type: "checkbox", value: s?.active !== false })}
       <fieldset class="spanall"><legend>School calendar (optional)</legend><p class="xs muted">Only if this school opens on different dates from the academic-year defaults.</p>
-        ${ays.map(ay => `<div class="grid g4" style="margin-bottom:.4rem;align-items:end"><b>${esc(ay)}</b>${["T1", "T2", "T3"].map(t => `<div><label>${TERM_SHORT[t]}</label><input type="date" name="cal_${ay}_${t}" value="${esc(s?.calendars?.[ay]?.[t] || "")}"></div>`).join("")}</div>`).join("") || "<p class='muted small'>Add academic years first.</p>"}</fieldset>
+        ${ays.map(ay => `<div class="grid g4" style="margin-bottom:.4rem;align-items:end"><b>${esc(ay)}</b>${["T1", "T2", "T3"].map(t => `<div><label>${TERM_SHORT[t]}</label><input type="date" name="cal_${esc(ay)}_${t}" value="${esc(s?.calendars?.[ay]?.[t] || "")}"></div>`).join("")}</div>`).join("") || "<p class='muted small'>Add academic years first.</p>"}</fieldset>
       <div class="spanall modal-actions"><button type="button" class="btn" data-c>Cancel</button><button class="btn primary">Save</button></div></form>`);
     $("[data-c]", m).onclick = () => m.close();
     $("#sf", m).onsubmit = ev => { ev.preventDefault(); const f = ev.target;
@@ -228,7 +228,7 @@ function allowances(el) {
   };
   el.innerHTML = `<div class="card"><div class="card-head"><h3>Allowance types</h3><button class="btn primary" id="add">Add allowance type</button></div>
     <div class="table-wrap"><table><thead><tr><th>Code</th><th>Name</th><th>Applies to</th><th class="right">Current rate</th><th>Max periods</th><th>Combinable with</th><th>Status</th><th></th></tr></thead><tbody>
-    ${list.map(t => { return `<tr><td class="mono">${esc(t.code)}</td><td><b>${esc(t.name)}</b><div class="xs muted">${esc(t.eligibility)}</div></td><td class="small">${t.appliesTo === "latinHonor" ? "Students with a Latin honor" : "All qualified students"}<br>${(t.classifications || []).map(c => CLASS_NAMES[c]).join(", ")}</td><td class="right">${rateCell(t)}</td><td>${t.maxPeriods || "No limit"}</td><td>${(t.combinableWith || []).join(", ") || "—"}</td><td>${t.active === false ? "<span class='badge'>Inactive</span>" : "<span class='badge b-ok'>Active</span>"}</td><td><button class="btn sm" data-e="${esc(t.code)}">Edit</button></td></tr>`; }).join("")}</tbody></table></div>
+    ${list.map(t => { return `<tr><td class="mono">${esc(t.code)}</td><td><b>${esc(t.name)}</b><div class="xs muted">${esc(t.eligibility)}</div></td><td class="small">${t.appliesTo === "latinHonor" ? "Students with a Latin honor" : "All qualified students"}<br>${(t.classifications || []).map(c => CLASS_NAMES[c]).join(", ")}</td><td class="right">${rateCell(t)}</td><td>${esc(t.maxPeriods || "No limit")}</td><td>${esc((t.combinableWith || []).join(", ") || "—")}</td><td>${t.active === false ? "<span class='badge'>Inactive</span>" : "<span class='badge b-ok'>Active</span>"}</td><td><button class="btn sm" data-e="${esc(t.code)}">Edit</button></td></tr>`; }).join("")}</tbody></table></div>
     <p class="small muted">Rates are dated. To change an amount, end the current rate and add a new one; amounts already approved or paid never change.</p></div>`;
   const edit = t => {
     const order = l => (l ? LATIN_LEVELS.indexOf(l) : -1);

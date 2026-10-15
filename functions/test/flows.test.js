@@ -341,18 +341,23 @@ test("full program lifecycle", async t => {
     const anon = { uid: "anon_1", token: { firebase: { sign_in_provider: "anonymous" } } };
     const path = `searchApplications/${r.ref}/anon_1/bidbook.pdf`;
     files.set(path, { size: 2_000_000, contentType: "application/pdf" });
+    await assert.rejects(fx.bidbookTicket.run({ auth: anon, data: { ref: r.ref, code: r.code } }), /only from Top 20 finalists/);
     await assert.rejects(fx.submitBidbook.run({ auth: anon, data: { ref: r.ref, code: r.code, path } }), /only from Top 20 finalists/);
+    await assert.rejects(fx.bidbookTicket.run({ auth: tokens.admin, data: { ref: r.ref, code: r.code } }), /upload session/); // only anonymous sign-ins get tickets
 
     await rejects(call("reviewApplication", "maria", { ref: r.ref, action: "status", status: "Top 20 Finalist" }), /not allowed/);
     await rejects(call("reviewApplication", "admin", { ref: r.ref, action: "status", status: "Top 10 Awardee" }), /can't be changed/);
     await call("reviewApplication", "admin", { ref: r.ref, action: "status", status: "Top 20 Finalist", message: "Bring the original copy on interview day." });
     assert.equal((await call("applicationStatus", null, { ref: r.ref, code: r.code })).bidbookOpen, true);
+    const ticket = await fx.bidbookTicket.run({ auth: anon, data: { ref: r.ref, code: r.code } });
+    assert.equal(ticket.ref, r.ref); assert.equal(claims.get("anon_1").bidbookRef, r.ref); assert.ok(claims.get("anon_1").bidbookExp > Date.now());
 
     await assert.rejects(fx.submitBidbook.run({ auth: anon, data: { ref: r.ref, code: r.code, path: `searchApplications/${r.ref}/someone_else/bidbook.pdf` } }), /Invalid file/);
     files.set(`searchApplications/${r.ref}/anon_1/big.pdf`, { size: 30 * 1024 * 1024, contentType: "application/pdf" });
     await assert.rejects(fx.submitBidbook.run({ auth: anon, data: { ref: r.ref, code: r.code, path: `searchApplications/${r.ref}/anon_1/big.pdf` } }), /larger than 25 MB/);
     const after = await fx.submitBidbook.run({ auth: anon, data: { ref: r.ref, code: r.code, path, fileName: "Santos bidbook.pdf" } });
     assert.equal(after.status, "Bidbook Submitted");
+    assert.deepEqual(claims.get("anon_1"), {}); // ticket cleared after use
     assert.equal(get(`searchApplications/${r.ref}`).bidbookHistory.length, 1);
 
     await rejects(call("reviewApplication", "admin", { ref: r.ref, action: "status", status: "Not Selected" }), /remarks/);

@@ -1,6 +1,6 @@
 // Public pages (no sign-in): TOSCAN search application, status check and bidbook upload.
 import { auth, db, doc, getDoc, call, storage, ref, uploadBytesResumable, signInAnonymously, signOut } from "../fb.js";
-import { $, $$, esc, toast, fmtDate, manilaToday, printHtml, printHeader } from "../ui.js";
+import { $, $$, esc, toast, fmtDate, manilaToday, printHtml, printHeader, safeUrl } from "../ui.js";
 import { CORE_FIELDS, mergeApplicationConfig, applicationsOpen, APP_STATUS, BIDBOOK_MAX_MB } from "../core/applications.js";
 
 let cached = null;
@@ -30,7 +30,7 @@ export async function loginCard(el) {
     <h3>${esc(c.title)}</h3>
     <p class="small">${open ? `Grade 10 students may apply${c.closesOn ? ` until <b>${fmtDate(c.closesOn)}</b>` : ""}. No account is needed.` : "Applicants can check their status and Top 20 finalists can upload their bidbook here."}</p>
     <div class="btn-row">${open ? `<a class="btn gold" href="#/apply">Apply now</a>` : ""}<a class="btn" href="#/track">Check status / upload bidbook</a></div>
-    ${c.bidbookTemplateUrl ? `<a class="apply-dl" href="${esc(c.bidbookTemplateUrl)}" target="_blank" rel="noopener">⤓ Download the bidbook form (for Top 20 finalists)</a>` : ""}
+    ${safeUrl(c.bidbookTemplateUrl) ? `<a class="apply-dl" href="${esc(safeUrl(c.bidbookTemplateUrl))}" target="_blank" rel="noopener">⤓ Download the bidbook form (for Top 20 finalists)</a>` : ""}
   </div>`;
 }
 
@@ -46,17 +46,17 @@ export async function applyPage(root) {
   }
   const input = (f, name) => {
     const req = f.required ? "required" : "";
-    if (f.type === "textarea") return `<textarea name="${name}" rows="4" ${req}></textarea>`;
-    if (f.type === "select") return `<select name="${name}" ${req}><option value="">Choose…</option>${f.options.map(o => `<option>${esc(o)}</option>`).join("")}</select>`;
-    if (f.type === "school") return `<select name="${name}" ${req}><option value="">Choose your school…</option>${schools.map(o => `<option>${esc(o)}</option>`).join("")}</select>`;
+    if (f.type === "textarea") return `<textarea name="${esc(name)}" rows="4" ${req}></textarea>`;
+    if (f.type === "select") return `<select name="${esc(name)}" ${req}><option value="">Choose…</option>${f.options.map(o => `<option>${esc(o)}</option>`).join("")}</select>`;
+    if (f.type === "school") return `<select name="${esc(name)}" ${req}><option value="">Choose your school…</option>${schools.map(o => `<option>${esc(o)}</option>`).join("")}</select>`;
     const t = { tel: "tel", email: "email", date: "date", number: "number" }[f.type] || "text";
-    return `<input type="${t}" name="${name}" ${t === "number" ? 'step="any"' : ""} ${req} autocomplete="${{ lastName: "family-name", firstName: "given-name", middleName: "additional-name", email: "email", contact: "tel" }[f.id] || "off"}">`;
+    return `<input type="${t}" name="${esc(name)}" ${t === "number" ? 'step="any"' : ""} ${req} autocomplete="${{ lastName: "family-name", firstName: "given-name", middleName: "additional-name", email: "email", contact: "tel" }[f.id] || "off"}">`;
   };
   const q = (f, name) => `<div class="pub-q ${f.type === "textarea" ? "spanall" : ""}"><label class="${f.required ? "req" : ""}">${esc(f.label)}</label>${f.help ? `<div class="xs muted pub-help">${esc(f.help)}</div>` : ""}${input(f, name)}</div>`;
   main.innerHTML = `<form class="card pub-card" id="af" novalidate>
       <div class="pub-title"><div class="apply-kicker">Application form</div><h1>${esc(c.title)}</h1></div>
       <div class="pub-intro">${paras(c.intro)}
-        ${c.guidelinesUrl ? `<p><i>Read the <a href="${esc(c.guidelinesUrl)}" target="_blank" rel="noopener">General Guidelines</a>.</i></p>` : ""}
+        ${safeUrl(c.guidelinesUrl) ? `<p><i>Read the <a href="${esc(safeUrl(c.guidelinesUrl))}" target="_blank" rel="noopener">General Guidelines</a>.</i></p>` : ""}
         ${c.contactEmail ? `<p class="small muted">Contact us at <a href="mailto:${esc(c.contactEmail)}">${esc(c.contactEmail)}</a>${c.closesOn ? ` · Applications close on <b>${fmtDate(c.closesOn)}</b>` : ""}</p>` : ""}</div>
       <div class="grid g2 pub-fields">${CORE_FIELDS.map(f => q(f, f.id)).join("")}${c.questions.map(f => q(f, `a_${f.id}`)).join("")}</div>
       <input type="text" name="website" tabindex="-1" autocomplete="off" class="hp" aria-hidden="true">
@@ -136,7 +136,7 @@ function showStatus(el, s, creds) {
     ${s.bidbookOpen ? `<div class="bidbook-box">
         <h3>${s.bidbook ? "Upload a corrected bidbook" : "Upload your bidbook"}</h3>
         <ol class="small">
-          <li>${s.bidbookTemplateUrl ? `<a href="${esc(s.bidbookTemplateUrl)}" target="_blank" rel="noopener">Download the bidbook form</a>` : "Get the bidbook form from the TOSCAN Office"} and fill in every section.</li>
+          <li>${safeUrl(s.bidbookTemplateUrl) ? `<a href="${esc(safeUrl(s.bidbookTemplateUrl))}" target="_blank" rel="noopener">Download the bidbook form</a>` : "Get the bidbook form from the TOSCAN Office"} and fill in every section.</li>
           <li>Attach the proofs of veracity and your scanned Form 137-A, and sign the certifications.</li>
           <li>Save or scan everything as <b>one PDF</b> (at most ${s.maxMB || BIDBOOK_MAX_MB} MB) and upload it below${s.bidbookDeadline ? ` on or before <b>${fmtDate(s.bidbookDeadline)}</b>` : ""}.</li></ol>
         <div class="btn-row"><input type="file" id="bb" accept="application/pdf,.pdf"><button class="btn gold" id="bb-up">Upload bidbook</button></div>
@@ -153,6 +153,8 @@ function showStatus(el, s, creds) {
     const bar = $("#bb-p", el); bar.classList.remove("hidden");
     try {
       const cred = await signInAnonymously(auth);
+      await call("bidbookTicket", creds);            // verifies the code and grants a 20-minute upload ticket
+      await cred.user.getIdToken(true);              // pick up the ticket before uploading
       const safe = file.name.replace(/\.pdf$/i, "").replace(/[^A-Za-z0-9_.-]+/g, "_").slice(0, 60) || "bidbook";
       const path = `searchApplications/${creds.ref}/${cred.user.uid}/${Date.now()}_${safe}.pdf`;
       await new Promise((res, rej) => {

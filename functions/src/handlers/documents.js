@@ -1,6 +1,6 @@
 // Document submission, review, locking and controlled supersession.
 import { onCall } from "firebase-functions/v2/https";
-import { db, bucket, now, actor, audit, notify, bad, notFound, conflict, str, getSettings, FieldValue } from "../fb.js";
+import { db, bucket, now, actor, audit, notify, bad, notFound, conflict, str, getSettings, FieldValue, idArg } from "../fb.js";
 import {
   DOC_STATUS, TERMS, TERM_NAMES, requirementApplies, submissionWindow, windowState, resolveOpeningDate,
   academicRecordId, extensionId
@@ -50,7 +50,11 @@ export const submitDocument = onCall(async request => {
   const { submissionId, requirementCode, academicYear, term } = d;
   const fileName = str(d.fileName, 200);
   if (!/^[A-Za-z0-9]{10,40}$/.test(submissionId || "")) bad("Invalid submission id.");
+  if (!/^[^/\\]{1,200}$/.test(fileName)) bad("Invalid file name.");
   if (!isValidAY(academicYear) || !TERMS.includes(term)) bad("Choose the academic year and term.");
+  const requirementCodeSafe = idArg(requirementCode, "document code");
+  // Never touch the file of a submission that is already recorded (approved files are permanent).
+  if ((await db.doc(`submissions/${submissionId}`).get()).exists) conflict("This submission was already recorded.");
   const path = `documents/${studentId}/${submissionId}/${fileName}`;
   const file = bucket().file(path);
   const discard = async msg => { await file.delete().catch(() => {}); bad(msg); };
@@ -61,7 +65,7 @@ export const submitDocument = onCall(async request => {
   if (Number(meta.size) > MAX_BYTES) await discard("The file is larger than 15 MB.");
   if (!ALLOWED_TYPES.includes(meta.contentType)) await discard("Only PDF, JPG, PNG or WEBP files are accepted.");
 
-  const reqSnap = await db.doc(`documentRequirements/${requirementCode}`).get();
+  const reqSnap = await db.doc(`documentRequirements/${requirementCodeSafe}`).get();
   if (!reqSnap.exists || !requirementApplies(reqSnap.data(), term)) await discard("This document is not required for the selected term.");
   const req = reqSnap.data();
 
@@ -103,7 +107,8 @@ export const submitDocument = onCall(async request => {
 /** Staff review: start, approve (locks the record) or return with remarks. */
 export const reviewDocument = onCall(async request => {
   const a = await actor(request, { roles: ["staff", "admin"], perm: "reviewDocuments" });
-  const { submissionId, action, remarks } = request.data || {};
+  const { action, remarks } = request.data || {};
+  const submissionId = idArg(request.data?.submissionId, "submission id");
   if (!["start", "approve", "return"].includes(action)) bad("Unknown review action.");
   if (action === "return" && !str(remarks)) bad("Give the reason for returning this document.");
   const ref = db.doc(`submissions/${submissionId}`);
@@ -146,7 +151,8 @@ export const reviewDocument = onCall(async request => {
  */
 export const openSupersession = onCall(async request => {
   const a = await actor(request, { roles: ["admin"] });
-  const { submissionId, reason } = request.data || {};
+  const { reason } = request.data || {};
+  const submissionId = idArg(request.data?.submissionId, "submission id");
   if (!str(reason)) bad("Give the reason for allowing a corrected version.");
   const ref = db.doc(`submissions/${submissionId}`);
   const snap = await ref.get();
@@ -163,7 +169,8 @@ export const openSupersession = onCall(async request => {
 /** Staff may record that a student cannot submit (kept for the audit trail only). */
 export const noteDocument = onCall(async request => {
   const a = await actor(request, { roles: ["staff", "admin"], perm: "reviewDocuments" });
-  const { submissionId, note } = request.data || {};
+  const { note } = request.data || {};
+  const submissionId = idArg(request.data?.submissionId, "submission id");
   if (!str(note)) bad("Enter a note.");
   const ref = db.doc(`submissions/${submissionId}`);
   if (!(await ref.get()).exists) notFound("Submission not found.");

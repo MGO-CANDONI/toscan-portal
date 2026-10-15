@@ -98,13 +98,17 @@ export async function notify(uids, { title, body, link = "", kind = "info", id =
   if (!list.length) return;
   const settings = await getSettings();
   const batch = db.batch();
+  const sent = [];
   for (const uid of list) {
     const ref = id ? db.doc(`notifications/${id}_${uid}`) : db.collection("notifications").doc();
+    if (id && (await ref.get()).exists) continue; // already notified: idempotent ids are never re-sent
     batch.set(ref, { uid, title, body, link, kind, read: false, createdAt: now() });
+    sent.push(uid);
   }
+  if (!sent.length) return;
   await batch.commit();
   if (!email || !settings.notifications.emailEnabled) return;
-  const users = await Promise.all(list.map(uid => db.doc(`users/${uid}`).get()));
+  const users = await Promise.all(sent.map(uid => db.doc(`users/${uid}`).get()));
   const mail = db.batch();
   for (const u of users) {
     const to = u.exists && u.data().email;
@@ -139,4 +143,32 @@ export async function uidOfStudent(studentId) {
 
 export function str(v, max = 300) {
   return v == null ? "" : String(v).trim().slice(0, max);
+}
+
+/**
+ * Simple per-caller rate limit for public (unauthenticated) endpoints, keyed by IP.
+ * Allows `max` calls per `windowMin` minutes; stored in rateLimits/{scope}_{ip}.
+ */
+export async function throttle(request, scope, max, windowMin = 60) {
+  const ip = request.rawRequest?.ip || request.rawRequest?.headers?.["x-forwarded-for"]?.split(",")[0]?.trim();
+  if (!ip) return; // no network context (tests)
+  const key = `${scope}_${ip.replace(/[^A-Za-z0-9]/g, "_")}`;
+  const ref = db.doc(`rateLimits/${key}`);
+  const nowMs = Date.now(), win = windowMin * 60e3;
+  const ok = await db.runTransaction(async tx => {
+    const snap = await tx.get(ref);
+    const d = snap.exists ? snap.data() : null;
+    const fresh = !d || nowMs - (d.windowStart || 0) > win;
+    const n = fresh ? 1 : (d.n || 0) + 1;
+    tx.set(ref, { n, windowStart: fresh ? nowMs : d.windowStart, scope, updatedAt: now() });
+    return n <= max;
+  });
+  if (!ok) fail("resource-exhausted", "Too many requests from your connection. Please try again later.");
+}
+
+/** A document id or code from request data: one path segment, safe characters only. */
+export function idArg(v, label = "identifier", re = /^[A-Za-z0-9_.-]{1,80}$/) {
+  const s = str(v, 80);
+  if (!re.test(s)) bad(`Invalid ${label}.`);
+  return s;
 }
