@@ -63,12 +63,8 @@ export function startRole(claims) {
 export const studentById = id => (S.d.students || []).find(s => s.id === id) || null;
 export const isAdmin = () => S.claims.role === "admin";
 export const isStaff = () => ["staff", "admin"].includes(S.claims.role);
-export function can(perm) {
-  if (isAdmin()) return true;
-  if (S.claims.role !== "staff") return false;
-  const p = S.account?.permissions || ["reviewDocuments", "verifyRecords", "decideEligibility", "preparePayroll", "viewReports"];
-  return p.includes(perm);
-}
+/** Staff and administrators can do everything; only the Administration pages are admin-only. */
+export function can(perm) { return isStaff() && !!perm; }
 export function settings() {
   const s = S.settings || {};
   return {

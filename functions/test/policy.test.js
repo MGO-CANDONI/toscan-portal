@@ -139,16 +139,17 @@ test("ended program only blocks periods starting on or after the effective date"
 });
 
 test("payroll workflow guards", () => {
-  const staff = { uid: "s1", role: "staff", permissions: ["preparePayroll"] };
-  const approver = { uid: "a1", role: "staff", permissions: ["approvePayroll"] };
+  const staff = { uid: "s1", role: "staff" };
+  const approver = { uid: "a1", role: "staff" };
   const admin = { uid: "ad", role: "admin" };
+  const student = { uid: "st", role: "student" };
   const p = st => ({ status: st, itemCount: 3, preparedBy: { uid: "s1" }, reviewedBy: null });
   assert.equal(checkPayrollAction(p(PAYROLL.GENERATED), "submitReview", staff), null);
   assert.match(checkPayrollAction(p(PAYROLL.REVIEW), "review", staff), /different person/);
-  assert.match(checkPayrollAction(p(PAYROLL.REVIEW), "approve", staff), /not authorized/);
+  assert.match(checkPayrollAction(p(PAYROLL.REVIEW), "approve", student), /not authorized/);
   assert.match(checkPayrollAction(p(PAYROLL.REVIEW), "approve", approver), /reviewed before/);
   assert.equal(checkPayrollAction({ ...p(PAYROLL.REVIEW), reviewedBy: { uid: "x" } }, "approve", approver), null);
-  assert.match(checkPayrollAction(p(PAYROLL.APPROVED), "release", staff), /not authorized/);
+  assert.match(checkPayrollAction(p(PAYROLL.APPROVED), "release", student), /not authorized/);
   assert.match(checkPayrollAction(p(PAYROLL.APPROVED), "release", admin, {}), /payment date/);
   assert.match(checkPayrollAction(p(PAYROLL.APPROVED), "release", admin, { paymentDate: "2026-10-20" }, "2026-10-14"), /future/);
   assert.match(checkPayrollAction(p(PAYROLL.APPROVED), "release", admin, { paymentDate: "2026-10-10" }), /reference/);

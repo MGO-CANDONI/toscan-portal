@@ -45,7 +45,7 @@ export const CORE_FIELDS = [
   { id: "lastName", label: "Last Name", type: "text", required: true },
   { id: "firstName", label: "First Name", type: "text", required: true },
   { id: "middleName", label: "Middle Name", help: "Put N/A if not applicable", type: "text", required: true },
-  { id: "school", label: "School", type: "text", required: true },
+  { id: "school", label: "School", type: "school", required: true },
   { id: "contact", label: "Contact Number", type: "tel", required: true },
   { id: "email", label: "E-mail Address", type: "email", required: true }
 ];
@@ -119,11 +119,19 @@ export function cleanApplicationConfig(d = {}) {
 }
 
 /** Validates an applicant's answers against the form; returns { errors, value }. */
-export function validateApplication(config, d = {}) {
+export const OTHER_SCHOOL = "__other__";
+
+/** schools: names from master data; the applicant picks one or "Other" and types the name. */
+export function validateApplication(config, d = {}, schools = null) {
   const errors = [], value = {}, answers = {};
   for (const f of CORE_FIELDS) {
     value[f.id] = s(d[f.id], f.id === "school" ? 200 : 100);
     if (f.required && !value[f.id]) errors.push(`${f.label} is required.`);
+  }
+  if (value.school === OTHER_SCHOOL || (schools?.length && !schools.includes(value.school))) {
+    const other = s(d.schoolOther, 200);
+    if (!other) errors.push("Choose your school from the list, or choose “Other” and type its name.");
+    value.school = other; value.schoolOther = true;
   }
   if (value.email && !EMAIL_RE.test(value.email)) errors.push("Enter a valid e-mail address.");
   if (value.contact && !PHONE_RE.test(value.contact)) errors.push("Enter a valid contact number.");

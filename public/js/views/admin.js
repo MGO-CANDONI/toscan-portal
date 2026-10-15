@@ -3,7 +3,7 @@ import { S, settings, studentById } from "../state.js";
 import { db, collection, query, orderBy, limit, getDocs, call, storage, ref, uploadBytes } from "../fb.js";
 import {
   $, $$, esc, toast, busy, opts, fmtDate, fmtDateTime, money, userBadge, classBadge, TERM_NAMES, TERM_SHORT, PERIOD_NAMES, CLASS_NAMES,
-  ROLE_NAMES, PERMISSION_NAMES, fullName, renderTable, confirmBox, openModal, fieldHtml, datalist
+  ROLE_NAMES, fullName, renderTable, confirmBox, openModal, fieldHtml, datalist
 } from "../ui.js";
 import { clean } from "./common.js";
 import { LATIN_LEVELS } from "../core/policy.js";
@@ -29,7 +29,6 @@ export function approvals(main) {
           <div data-for="student"><label>Student record</label><select name="mode">${opts([["existing", "Link existing record"], ["new", "Create new record"]], sug || r.toscanId && studentById(r.toscanId) ? "existing" : "new")}</select></div>
           <div data-for="student" data-existing><label>TOSCAN ID to link</label><input type="text" name="studentId" list="dl-unlinked" value="${esc(sug?.id || (r.toscanId && studentById(r.toscanId) ? r.toscanId : ""))}"></div>
           <div data-for="student"><label>Classification</label><select name="classification">${opts(Object.entries(CLASS_NAMES), sug?.classification || "", "Keep / set later")}</select></div>
-          <div data-for="staff" class="spanall"><label>Staff permissions</label><div class="grid g2">${Object.entries(PERMISSION_NAMES).map(([k, l]) => `<label class="check"><input type="checkbox" name="perm" value="${k}" ${["reviewDocuments", "verifyRecords", "decideEligibility", "preparePayroll", "viewReports"].includes(k) ? "checked" : ""}> ${esc(l)}</label>`).join("")}</div></div>
           <div class="spanall btn-row end"><button type="button" class="btn danger" data-decline>Decline…</button><button type="button" class="btn ok" data-approve>Approve</button></div>
         </form></div>`;
     }).join("") || `<div class="card empty">No registrations are waiting.</div>`}`;
@@ -38,13 +37,12 @@ export function approvals(main) {
     const sync = () => {
       const role = f.role.value;
       $$("[data-for=student]", f).forEach(x => x.classList.toggle("hidden", role !== "student"));
-      $$("[data-for=staff]", f).forEach(x => x.classList.toggle("hidden", role !== "staff"));
-      $("[data-existing]", f).classList.toggle("hidden", role !== "student" || f.mode.value !== "existing");
+            $("[data-existing]", f).classList.toggle("hidden", role !== "student" || f.mode.value !== "existing");
     };
     f.role.onchange = sync; f.mode.onchange = sync; sync();
     $("[data-approve]", f).onclick = async e => {
       const role = f.role.value;
-      const data = { uid, decision: "approve", role, classification: f.classification.value, permissions: $$("input[name=perm]:checked", f).map(x => x.value) };
+      const data = { uid, decision: "approve", role, classification: f.classification.value };
       if (role === "student") {
         data.studentLink = f.mode.value === "existing" ? { mode: "existing", studentId: f.studentId.value.trim() } : { mode: "new" };
         if (data.studentLink.mode === "existing" && !data.studentLink.studentId) return toast("Enter the TOSCAN ID to link.", "err");
@@ -63,7 +61,7 @@ approvals.deps = ["r:users", "r:students"];
 /* ---------------- Users & permissions ---------------- */
 export function users(main) {
   const rows = (S.d.users || []).filter(u => u.status !== "pending");
-  main.innerHTML = `<div class="page-head"><div><h1>Users &amp; Permissions</h1><p>Roles are enforced by the server and the database rules. Changes take effect within a minute.</p></div></div><div class="card" id="t"></div>`;
+  main.innerHTML = `<div class="page-head"><div><h1>Users &amp; Permissions</h1><p>Staff can do everything except the Administration pages. Roles are enforced by the server and the database rules; changes take effect within a minute.</p></div></div><div class="card" id="t"></div>`;
   renderTable($("#t", main), {
     id: "users", rows,
     searchText: u => `${u.displayName || ""} ${u.email} ${u.studentId || ""}`,
@@ -72,7 +70,6 @@ export function users(main) {
       { label: "Name", render: u => `${esc(u.displayName || fullName(u.registration) || "")}<div class="xs muted">${esc(u.email)}</div>`, sort: u => u.displayName || u.email },
       { label: "Role", render: u => esc(ROLE_NAMES[u.role] || u.role), sort: u => u.role },
       { label: "Student record", render: u => u.studentId ? `<a class="mono" href="#/students/${esc(u.studentId)}">${esc(u.studentId)}</a>` : "—" },
-      { label: "Permissions", render: u => u.role === "admin" ? `<span class="small">All</span>` : u.role === "staff" ? `<span class="small">${(u.permissions || []).map(p => esc(PERMISSION_NAMES[p] || p)).join(", ")}</span>` : "" },
       { label: "Status", render: u => userBadge(u.status), sort: u => u.status },
       { label: "Since", render: u => fmtDate(u.decidedAt || u.createdAt), sort: u => u.decidedAt?.seconds || 0 }
     ],
@@ -89,17 +86,14 @@ function editUser(u) {
       <div class="grid g2">
         <div><label>Role</label><select name="role">${opts(Object.entries(ROLE_NAMES).filter(([k]) => k !== "student" || u.studentId), u.role)}</select></div>
         <div><label>Account</label><select name="status">${opts([["approved", "Active"], ["disabled", "Disabled (cannot sign in)"]], u.status)}</select></div></div>
-      <fieldset id="perms"><legend>Staff permissions</legend>${Object.entries(PERMISSION_NAMES).map(([k, l]) => `<label class="check"><input type="checkbox" name="perm" value="${k}" ${(u.permissions || []).includes(k) ? "checked" : ""}> ${esc(l)}</label>`).join("")}
-        <p class="xs muted">Approving and releasing payroll are separate permissions so that no single staff member can complete a payment alone.</p></fieldset>
       <div><label>Reason for the change</label><input type="text" name="reason"></div>
       <div class="modal-actions"><button type="button" class="btn" data-c>Cancel</button><button class="btn primary">Save</button></div></form>`, { size: "narrow" });
   const f = $("#uf", m);
-  const sync = () => $("#perms", m).classList.toggle("hidden", f.role.value !== "staff"); f.role.onchange = sync; sync();
   $("[data-c]", m).onclick = () => m.close();
   f.onsubmit = ev => {
     ev.preventDefault();
     busy(f.querySelector(".btn.primary"), async () => {
-      await call("updateAccess", { uid: u.uid, role: f.role.value, status: f.status.value, permissions: $$("input[name=perm]:checked", f).map(x => x.value), reason: f.reason.value });
+      await call("updateAccess", { uid: u.uid, role: f.role.value, status: f.status.value, reason: f.reason.value });
       m.close();
     }, "Access updated.").catch(() => {});
   };

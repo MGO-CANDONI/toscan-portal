@@ -172,7 +172,7 @@ export async function staffProfile(main) {
       <div class="info"><h2>${esc(a.displayName || fullName(a.registration))}</h2>
         <div class="chips"><span class="badge b-dark">${esc(ROLE_NAMES[a.role])}</span></div>
         <div class="btn-row" style="margin-top:.8rem"><label class="btn" style="margin:0">Change photo<input type="file" accept="image/*" class="hidden" id="ph" data-nodirty></label></div></div></div></div>
-    <div class="card"><h3>What I can do</h3><ul>${(a.role === "admin" ? Object.keys(PERMISSION_NAMES) : (a.permissions || [])).map(p => `<li>${esc(PERMISSION_NAMES[p] || p)}</li>`).join("") || "<li>No permissions assigned.</li>"}</ul></div>`;
+    <div class="card"><h3>What I can do</h3><ul>${Object.values(PERMISSION_NAMES).map(p => `<li>${esc(p)}</li>`).join("")}${a.role === "admin" ? "<li>Administration: registrations, users, settings and master data, data import, audit trail</li>" : ""}</ul></div>`;
   hydratePhotos(main);
   $("#ph").onchange = async e => {
     const f = e.target.files[0]; if (!f) return;

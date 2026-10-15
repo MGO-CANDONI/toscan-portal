@@ -66,6 +66,13 @@ Delivered as one release covering phases 1–7 of the enhancement requirements.
 - **Design.** New summary tiles; the Reports menu no longer overlaps; settings tabs wrap; buttons that are links no longer show underlines.
 - **Security rules.** Anonymous sign-ins count as signed out for portal data. New: `searchApplications` (staff read only), `publicConfig` (public read), bidbook uploads limited to the uploader's own folder, PDF only, no overwrite or delete.
 
+## Update — October 15, 2026 (afternoon)
+
+- **Design refresh.** One typeface (Inter) across the whole portal, true gold accents on white, light top bar and sidebar, quieter key figures instead of tiles. The staff **Home** page now greets the user and lists only what needs attention (registrations, documents, verifications, eligibility, payrolls, applications), with a short "At a glance" and "Upcoming" panel.
+- **Staff access.** Staff now have every function except the Administration pages (registrations, users, settings and master data, data import, audit trail). The per-person permission checkboxes are gone. Payroll separation of duties still applies: the person who prepares a payroll can't review it, and approval and release are separate steps.
+- **Application form.** The school is chosen from the schools in master data (Settings → Schools), with an "Other — not listed" option; applications from unlisted schools are flagged for staff.
+- **Security rules.** `schools` is readable without signing in (names only; needed by the public form). Run `tests/` to confirm.
+
 ## Outstanding items
 
 1. Run the security-rules tests and a pilot with real accounts on the deployed project before announcing the portal.

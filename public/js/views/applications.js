@@ -61,7 +61,7 @@ function detail(a0) {
   const m = openModal(`
     <div class="card-head"><div><div class="xs muted mono">${esc(a.ref)} · ${esc(a.searchTitle)}</div><h2 style="margin:.2rem 0 0">${esc(name(a))}</h2></div>${appBadge(a.status)}</div>
     <dl class="kv small">
-      ${CORE_FIELDS.map(f => `<dt>${esc(f.label)}</dt><dd>${f.id === "email" ? `<a href="mailto:${esc(a.email)}">${esc(a.email)}</a>` : esc(a[f.id])}</dd>`).join("")}
+      ${CORE_FIELDS.map(f => `<dt>${esc(f.label)}</dt><dd>${f.id === "email" ? `<a href="mailto:${esc(a.email)}">${esc(a.email)}</a>` : esc(a[f.id])}${f.id === "school" && a.schoolOther ? ` <span class="badge b-warn">Not in master list</span>` : ""}</dd>`).join("")}
       ${(a.questions || []).map(q => `<dt>${esc(q.label)}</dt><dd>${esc(a.answers?.[q.id] || "—")}</dd>`).join("")}
       <dt>Applied</dt><dd>${fmtDateTime(a.createdAt)}</dd></dl>
     <h3 style="margin-top:1rem">Bidbook</h3>

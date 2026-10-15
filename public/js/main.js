@@ -14,6 +14,10 @@ import * as Common from "./views/common.js";
 import * as Apply from "./views/apply.js";
 import * as Applications from "./views/applications.js";
 
+const ICON = {
+  menu: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>`,
+  bell: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 16v-5a6 6 0 0 0-12 0v5l-2 2h16l-2-2z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>`
+};
 let screen = "", current = null, dirty = false, claimsStamp = null, renderTimer = null, anonActive = false;
 
 /* Pages anyone can open without signing in. */
@@ -97,7 +101,7 @@ function navGroups() {
     { items: [["home", "Dashboard"], ["documents", "My Documents", counts.returned], ["allowance", "My Allowance"], ["enrollment", "Enrollment Records"], ["profile", "My Profile"], ["notifications", "Notifications", counts.unread]] }
   ];
   const groups = [
-    { items: [["home", "Overview"], ["notifications", "Notifications", counts.unread]] },
+    { items: [["home", "Home"], ["notifications", "Notifications", counts.unread]] },
     { label: "Students", items: [["students", "Student Directory"], can("reviewDocuments") && ["review", "Document Review", counts.queue], can("verifyRecords") && ["verify", "Verifications", counts.verify], can("decideEligibility") && ["eligibility", "Eligibility", counts.decide]] },
     { label: "TOSCAN Search", items: [can("reviewApplications") && ["applications", "Applications", counts.applications]] },
     { label: "Allowance", items: [(can("preparePayroll") || can("approvePayroll") || can("releasePayroll")) && ["payroll", "Payroll"], can("encodeHistory") && ["history", "Historical Records"], can("viewReports") && ["reports", "Reports"]] }
@@ -134,11 +138,11 @@ function renderShell() {
   screen = "shell";
   $("#app").innerHTML = `
     <header class="topbar">
-      <button class="icon-btn menu-btn" id="menu-btn" aria-label="Menu">☰</button>
+      <button class="icon-btn menu-btn" id="menu-btn" aria-label="Menu">${ICON.menu}</button>
       <img class="seal" src="assets/toscan-seal.png" alt="">
       <div class="brand"><b>TOSCAN Portal</b><span>Municipal Government of Candoni</span></div>
       <div class="spacer"></div>
-      <a class="icon-btn" href="#/notifications" aria-label="Notifications" id="bell">🔔<span class="dot hidden" id="bell-dot"></span></a>
+      <a class="icon-btn" href="#/notifications" aria-label="Notifications" id="bell">${ICON.bell}<span class="dot hidden" id="bell-dot"></span></a>
       <div class="me" id="me"></div>
       <button class="icon-btn" id="logout">Log out</button>
     </header>

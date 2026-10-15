@@ -12,7 +12,8 @@ export const PERMISSIONS = [
   "reviewDocuments", "verifyRecords", "decideEligibility", "preparePayroll",
   "approvePayroll", "releasePayroll", "encodeHistory", "viewReports", "reviewApplications"
 ];
-export const DEFAULT_STAFF_PERMISSIONS = ["reviewDocuments", "verifyRecords", "decideEligibility", "preparePayroll", "viewReports"];
+/** Staff hold every permission; only the Administration pages are limited to administrators. */
+export const DEFAULT_STAFF_PERMISSIONS = [...PERMISSIONS];
 
 export const DOC_STATUS = { SUBMITTED: "Submitted", REVIEW: "Under Review", RETURNED: "Returned", APPROVED: "Approved", SUPERSEDED: "Superseded" };
 
@@ -269,8 +270,8 @@ export const PAYROLL_ACTIONS = {
 
 export function hasPermission(actor, perm) {
   if (!actor) return false;
-  if (actor.role === "admin") return true;
-  return actor.role === "staff" && (actor.permissions || []).includes(perm);
+  if (actor.role === "admin" || actor.role === "staff") return PERMISSIONS.includes(perm);
+  return false;
 }
 
 /** Checks one payroll action. Returns an error message or null. */

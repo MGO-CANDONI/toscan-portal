@@ -3,15 +3,42 @@ import { S, settings, can, isAdmin, studentById } from "../state.js";
 import { call } from "../fb.js";
 import {
   $, $$, esc, toast, busy, opts, fmtDate, fmtDateTime, money, docBadge, eligBadge, recordBadge, payrollBadge,
-  TERM_NAMES, TERM_SHORT, PERIOD_NAMES, CLASS_SHORT, fullName, renderTable, confirmBox, openModal
+  TERM_NAMES, TERM_SHORT, PERIOD_NAMES, CLASS_SHORT, fullName, renderTable, confirmBox, openModal, avatar, manilaToday
 } from "../ui.js";
 import { openViewer, counts } from "./common.js";
 
 const sname = id => fullName(studentById(id)) || id;
 
-/* ---------------- Overview ---------------- */
+/* ---------------- Home ---------------- */
+const I = {
+  user: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg>`,
+  doc: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 15l2 2 4-4"/></svg>`,
+  check: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>`,
+  star: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>`,
+  cash: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M6 12h.01M18 12h.01"/></svg>`,
+  mail: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>`
+};
+function greeting() {
+  const h = Number(new Date().toLocaleString("en-US", { hour: "numeric", hour12: false, timeZone: "Asia/Manila" }));
+  return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
+}
+function firstName() {
+  const a = S.account || {};
+  const n = a.registration?.firstName || (a.displayName || "").replace(/^[^,]+,\s*/, "").split(" ")[0] || "";
+  return n ? n.charAt(0).toUpperCase() + n.slice(1).toLowerCase() : "";
+}
+function nextPayrollDate(cfg) {
+  if (!cfg.autoGenerate) return null;
+  const today = manilaToday(); const [y, m] = today.split("-").map(Number);
+  const d = String(cfg.dayOfMonth).padStart(2, "0");
+  const thisMonth = `${y}-${String(m).padStart(2, "0")}-${d}`;
+  if (thisMonth >= today) return thisMonth;
+  const ny = m === 12 ? y + 1 : y, nm = m === 12 ? 1 : m + 1;
+  return `${ny}-${String(nm).padStart(2, "0")}-${d}`;
+}
+
 export function overview(main) {
-  const c = counts(), ay = settings().currentAcademicYear;
+  const c = counts(), cfg = settings(), ay = cfg.currentAcademicYear;
   const students = S.d.students || [];
   const active = students.filter(s => s.programStatus !== "Ended");
   const ents = (S.d.allowances || []).filter(e => e.status !== "Cancelled");
@@ -19,35 +46,52 @@ export function overview(main) {
   const awaiting = ents.filter(e => e.status === "Awaiting Payroll");
   const pays = (S.d.payrolls || []).filter(p => ["Draft", "Generated", "For Review", "Approved"].includes(p.status)).sort((a, b) => b.payrollNo.localeCompare(a.payrollNo));
   const incomplete = (S.d.eligibility || []).filter(e => e.academicYear === ay && ["Pending Documents", "Returned for Correction"].includes(e.status)).length;
-  const oldest = [...(S.d.queue || [])].sort((a, b) => (a.submittedAt?.seconds || 0) - (b.submittedAt?.seconds || 0)).slice(0, 6);
-  const stat = (n, l, href, alert) => `<a class="stat ${alert ? "alert" : ""}" href="${href}"><div class="n">${n}</div><div class="l">${esc(l)}</div></a>`;
+  const oldest = [...(S.d.queue || [])].sort((a, b) => (a.submittedAt?.seconds || 0) - (b.submittedAt?.seconds || 0)).slice(0, 5);
+  const apps = (S.d.applications || []);
+  const newApps = apps.filter(a => a.status === "Submitted").length, newBids = apps.filter(a => a.status === "Bidbook Submitted").length;
+
+  const row = (icon, cls, title, sub, n, href) => `<li><a href="${href}"><span class="ic ${cls}">${icon}</span><span class="t"><b>${esc(title)}</b><span>${esc(sub)}</span></span><span class="n">${n}</span></a></li>`;
+  const items = [
+    isAdmin() && c.pending && row(I.user, "red", "Registrations to approve", "New accounts waiting for approval", c.pending, "#/approvals"),
+    c.queue && row(I.doc, "", "Documents to review", oldest[0] ? `Oldest from ${sname(oldest[0].studentId)}, ${fmtDate(oldest[0].submittedAt)}` : "", c.queue, "#/review"),
+    c.verify && row(I.check, "blue", "Records to verify", "Enrollment, identity and ATM changes", c.verify, "#/verify"),
+    c.decide && row(I.star, "", "Eligibility decisions", "Students with complete documents for the period", c.decide, "#/eligibility"),
+    ...pays.map(p => row(I.cash, "green", `Payroll ${p.payrollNo} — ${p.status}`, `${money(p.total)} · ${p.itemCount || 0} line${p.itemCount === 1 ? "" : "s"}`, "Open", `#/payroll/${p.payrollNo}`)),
+    newApps && row(I.mail, "", "Applications to screen", "New TOSCAN search applications", newApps, "#/applications"),
+    newBids && row(I.mail, "", "Bidbooks received", "Finalists who uploaded a bidbook", newBids, "#/applications")
+  ].filter(Boolean);
+  const nextPay = nextPayrollDate(cfg.payroll);
+  const name = firstName();
   main.innerHTML = `
-    <div class="page-head"><div><h1>Overview</h1><p>Academic year ${esc(ay || "not set")} · ${esc(fmtDate(new Date()))}</p></div></div>
+    <div class="home-head">${avatar(S.account?.registration || S.account, null, "lg")}<div><h1>${greeting()}${name ? `, ${esc(name)}` : ""}</h1><p>Here's what's happening · Academic year ${esc(ay || "not set")}</p></div></div>
     ${!ay && isAdmin() ? `<div class="notice warn">Set the current academic year and its term opening dates in <a href="#/settings">Settings</a> before students submit documents.</div>` : ""}
     ${isAdmin() && S.master.allowanceTypes.some(t => t.active !== false && !(t.rates || []).length) ? `<div class="notice warn">Some allowance types have no rate yet. Set them in <a href="#/settings">Settings → Allowance types</a>.</div>` : ""}
-    <div class="stats">
-      ${isAdmin() ? stat(c.pending, "Registrations to approve", "#/approvals", c.pending) : ""}
-      ${stat(c.queue, "Documents to review", "#/review", c.queue)}
-      ${stat(c.verify, "Records to verify", "#/verify", c.verify)}
-      ${stat(c.decide, "Eligibility decisions", "#/eligibility", c.decide)}
-      ${stat(pays.length, "Payrolls in progress", "#/payroll")}
-    </div>
-    <div class="stats">
-      ${stat(active.length, "Active students", "#/students")}
-      ${stat(active.filter(s => s.classification === "top10").length, "Top 10 awardees", "#/students")}
-      ${stat(active.filter(s => s.classification === "top20").length, "Top 20 qualifiers", "#/students")}
-      ${stat(incomplete, `Incomplete requirements (AY ${ay})`, "#/reports")}
-      ${stat(money(awaiting.reduce((t, e) => t + Number(e.amount || 0), 0)), `${awaiting.length} awaiting payroll`, "#/payroll")}
-      ${stat(money(relAY), `Released AY ${ay}`, "#/reports")}
-    </div>
-    <div class="split">
-      <div class="card"><div class="card-head"><h3>Waiting longest for review</h3><a class="btn sm" href="#/review">Open queue</a></div>
-        <div class="table-wrap"><table><tbody>${oldest.map(s => `<tr><td>${esc(sname(s.studentId))}</td><td>${esc(s.requirementName)}</td><td class="small">${esc(TERM_SHORT[s.term])} ${esc(s.academicYear)}</td><td class="small muted">${fmtDateTime(s.submittedAt)}</td></tr>`).join("") || `<tr><td class="empty">Nothing waiting.</td></tr>`}</tbody></table></div></div>
-      <div class="card"><div class="card-head"><h3>Payrolls needing action</h3><a class="btn sm" href="#/payroll">Payroll</a></div>
-        ${pays.map(p => `<div class="btn-row" style="justify-content:space-between;padding:.4rem 0;border-bottom:1px solid var(--line)"><a href="#/payroll/${esc(p.payrollNo)}" class="mono">${esc(p.payrollNo)}</a>${payrollBadge(p.status)}<span>${money(p.total)}</span></div>`).join("") || `<div class="empty">None.</div>`}</div>
+    <div class="home">
+      <div>
+        <div class="card"><div class="card-head"><h3>Needs your attention</h3><span class="small muted">${items.length ? `${items.length} item${items.length === 1 ? "" : "s"}` : ""}</span></div>
+          <ul class="inbox">${items.join("") || `<li><span class="ic green">${I.check}</span><span class="t"><b>You're all caught up</b><span>Nothing is waiting for action right now.</span></span></li>`}</ul></div>
+        ${oldest.length ? `<div class="card"><div class="card-head"><h3>Waiting longest for review</h3><a class="btn sm" href="#/review">Open queue</a></div>
+          <div class="table-wrap"><table><tbody>${oldest.map(s => `<tr><td>${esc(sname(s.studentId))}</td><td>${esc(s.requirementName)}</td><td class="small">${esc(TERM_SHORT[s.term])} ${esc(s.academicYear)}</td><td class="small muted right">${fmtDateTime(s.submittedAt)}</td></tr>`).join("")}</tbody></table></div></div>` : ""}
+      </div>
+      <div>
+        <div class="card"><div class="card-head"><h3>At a glance</h3><span class="small muted">${esc(fmtDate(new Date()))}</span></div>
+          <ul class="glance">
+            <li><a href="#/students"><span>Active students</span></a><b>${active.length}</b></li>
+            <li><span>Top 10 awardees</span><b>${active.filter(s => s.classification === "top10").length}</b></li>
+            <li><span>Top 20 qualifiers</span><b>${active.filter(s => s.classification === "top20").length}</b></li>
+            <li><span>Incomplete requirements, AY ${esc(ay || "—")}</span><b>${incomplete}</b></li>
+            <li><a href="#/payroll"><span>Awaiting payroll (${awaiting.length})</span></a><b>${money(awaiting.reduce((t, e) => t + Number(e.amount || 0), 0))}</b></li>
+            <li><a href="#/reports"><span>Released, AY ${esc(ay || "—")}</span></a><b>${money(relAY)}</b></li>
+          </ul></div>
+        <div class="card"><div class="card-head"><h3>Upcoming</h3></div>
+          <ul class="upcoming">
+            ${nextPay ? `<li><span class="when">${fmtDate(nextPay)}</span>Automatic payroll draft${awaiting.length ? ` — ${awaiting.length} allowance${awaiting.length === 1 ? "" : "s"} ready` : ""}</li>` : `<li><span class="when">Payroll</span>Automatic generation is off; generate payrolls manually.</li>`}
+            ${Object.entries(S.master.academicYears.find(y => y.id === ay)?.terms || {}).filter(([, t]) => t?.openingDate && t.openingDate >= manilaToday()).sort((a, b) => a[1].openingDate.localeCompare(b[1].openingDate)).map(([k, t]) => `<li><span class="when">${fmtDate(t.openingDate)}</span>${esc(TERM_NAMES[k] || k)} opens</li>`).join("")}
+          </ul></div>
+      </div>
     </div>`;
 }
-overview.deps = ["r:queue", "r:verify", "r:eligibility", "r:students", "r:users", "r:payrolls", "r:allowances", "settings", "allowanceTypes"];
+overview.deps = ["r:queue", "r:verify", "r:eligibility", "r:students", "r:users", "r:payrolls", "r:allowances", "r:applications", "settings", "allowanceTypes", "academicYears", "account"];
 
 /* ---------------- Document review ---------------- */
 export function review(main) {

@@ -184,11 +184,11 @@ test("full program lifecycle", async t => {
     await rejects(call("payrollAction", "staff", { payrollNo: P, action: "review" }), /different person/);
     await rejects(call("payrollAction", "admin", { payrollNo: P, action: "approve" }), /reviewed before/);
     await call("payrollAction", "admin", { payrollNo: P, action: "review" });
-    await rejects(call("payrollAction", "staff", { payrollNo: P, action: "approve" }), /not authorized/);
+    await rejects(call("payrollAction", "maria", { payrollNo: P, action: "approve" }), /not allowed/);
     await call("payrollAction", "admin", { payrollNo: P, action: "approve" });
     assert.equal(get(`allowances/TO2-201001_${AY}_P1_REG`).status, "Included in Payroll");
     assert.equal(get(`eligibility/TO2-201001_${AY}_P1`).status, "Included in Payroll");
-    await rejects(call("payrollAction", "staff", { payrollNo: P, action: "release", paymentDate: "2026-10-10", paymentRef: "DV-1" }), /not authorized/);
+    await rejects(call("payrollAction", "maria", { payrollNo: P, action: "release", paymentDate: "2026-10-10", paymentRef: "DV-1" }), /not allowed/);
     await rejects(call("payrollAction", "admin", { payrollNo: P, action: "release", paymentDate: "2026-10-10" }), /reference/);
     await rejects(call("payrollAction", "admin", { payrollNo: P, action: "release", paymentDate: "2099-01-01", paymentRef: "DV-1" }), /future/);
     await call("payrollAction", "admin", { payrollNo: P, action: "release", paymentDate: "2026-10-12", paymentRef: "DV-2026-10-0001" });
@@ -215,7 +215,6 @@ test("full program lifecycle", async t => {
       { "Student Name": "Ana Reyes", "School Year": "2025-2026", Semester: "1st", Amount: "4000", Status: "Unpaid" }
     ];
     await rejects(call("importRecords", "maria", { kind: "historical", rows, dryRun: true }), /not allowed/);
-    await rejects(call("importRecords", "staff", { kind: "historical", rows, dryRun: true }), /not authorized/);
     const dry = await call("importRecords", "admin", { kind: "historical", rows, dryRun: true });
     assert.deepEqual(dry.results.map(r => r.ok), [true, false, false, true]);
     assert.match(dry.results[1].errors[0], /Already recorded as Released/);
@@ -310,15 +309,19 @@ test("full program lifecycle", async t => {
   });
 
   await t.test("search applications: apply without signing in, finalist uploads bidbook", async () => {
-    const form = { lastName: "Santos", firstName: "Ana", middleName: "N/A", school: "Candoni National High School", contact: "09171234567", email: "ana@gmail.com", consent: true };
+    const form = { lastName: "Santos", firstName: "Ana", middleName: "N/A", school: "CANDONI NATIONAL HIGH SCHOOL", contact: "09171234567", email: "ana@gmail.com", consent: true };
     await rejects(call("submitApplication", null, form), /not being accepted/);
     await rejects(call("saveMasterData", "staff", { kind: "applicationForm", data: { title: "X" } }), /not allowed|authorized/);
     await rejects(call("saveMasterData", "admin", { kind: "applicationForm", data: { title: "T", questions: [{ id: "q_gwa", label: "GWA", type: "select", options: ["A"] }] } }), /two choices/);
     await call("saveMasterData", "admin", { kind: "applicationForm", data: { open: true, title: "TOSCAN APPLICATION 2099", closesOn: "2099-12-31", bidbookDeadline: "2099-12-31", questions: [{ id: "q_gwa", label: "Grade 9 general average", type: "number", required: true }] } });
     await rejects(call("submitApplication", null, { ...form, answers: {} }), /Grade 9 general average is required/);
     await rejects(call("submitApplication", null, { ...form, consent: false, answers: { q_gwa: "95" } }), /confirm/);
+    await rejects(call("submitApplication", null, { ...form, school: "Some School Not In Master", answers: { q_gwa: "95.4" } }), /Choose your school/);
+    const other = await call("submitApplication", null, { ...form, firstName: "Ben", email: "ben@gmail.com", school: "__other__", schoolOther: "St. Joseph Academy", answers: { q_gwa: "90" } });
+    assert.equal(get(`searchApplications/${other.ref}`).school, "St. Joseph Academy");
+    assert.equal(get(`searchApplications/${other.ref}`).schoolOther, true);
     const r = await call("submitApplication", null, { ...form, answers: { q_gwa: "95.4" } });
-    assert.match(r.ref, /^TS2099-0001$/);
+    assert.match(r.ref, /^TS2099-0002$/);
     assert.match(r.code, /^[A-Z2-9]{5}-[A-Z2-9]{5}$/);
     const doc = get(`searchApplications/${r.ref}`);
     assert.equal(doc.status, "Submitted"); assert.equal(doc.answers.q_gwa, "95.4"); assert.equal(doc.codeHash.length, 64);
@@ -337,7 +340,7 @@ test("full program lifecycle", async t => {
     files.set(path, { size: 2_000_000, contentType: "application/pdf" });
     await assert.rejects(fx.submitBidbook.run({ auth: anon, data: { ref: r.ref, code: r.code, path } }), /only from Top 20 finalists/);
 
-    await rejects(call("reviewApplication", "staff", { ref: r.ref, action: "status", status: "Top 20 Finalist" }), /not authorized/);
+    await rejects(call("reviewApplication", "maria", { ref: r.ref, action: "status", status: "Top 20 Finalist" }), /not allowed/);
     await rejects(call("reviewApplication", "admin", { ref: r.ref, action: "status", status: "Top 10 Awardee" }), /can't be changed/);
     await call("reviewApplication", "admin", { ref: r.ref, action: "status", status: "Top 20 Finalist", message: "Bring the original copy on interview day." });
     assert.equal((await call("applicationStatus", null, { ref: r.ref, code: r.code })).bidbookOpen, true);

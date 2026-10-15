@@ -52,7 +52,7 @@ service cloud.firestore {
     // Configuration (read by every signed-in user; changed only through saveMasterData)
     match /settings/{id}             { allow read: if signedIn(); }
     match /academicYears/{id}        { allow read: if signedIn(); }
-    match /schools/{id}              { allow read: if signedIn(); }
+    match /schools/{id}              { allow read: if true; } // school names are shown on the public application form
     match /documentRequirements/{id} { allow read: if signedIn(); }
     match /allowanceTypes/{id}       { allow read: if signedIn(); }
 

@@ -156,7 +156,7 @@ export const decideUser = onCall(async request => {
     });
     await auth.setCustomUserClaims(d.uid, { role: "student", studentId });
   } else {
-    const perms = d.role === "admin" ? PERMISSIONS : (Array.isArray(d.permissions) ? d.permissions.filter(p => PERMISSIONS.includes(p)) : DEFAULT_STAFF_PERMISSIONS);
+    const perms = PERMISSIONS; // staff and administrators hold every permission; Administration pages are admin-only
     await ref.update({ status: "approved", role: d.role, permissions: perms, studentId: null, decidedAt: now(), decidedBy: { uid: a.uid, name: a.name }, note: str(d.note, 500) });
     await auth.setCustomUserClaims(d.uid, { role: d.role });
     await audit(a, "user.approve", { type: "user", id: d.uid }, { after: { role: d.role, permissions: perms } });
@@ -181,7 +181,7 @@ export const updateAccess = onCall(async request => {
     if (d.role === "student" && !before.studentId) bad("Link a student record first: approve the account as a student.");
     patch.role = d.role;
   }
-  if (d.permissions) patch.permissions = d.permissions.filter(p => PERMISSIONS.includes(p));
+  if (["staff", "admin"].includes(patch.role || before.role)) patch.permissions = PERMISSIONS;
   if (d.status) {
     if (!["approved", "disabled"].includes(d.status)) bad("Invalid status.");
     patch.status = d.status;

@@ -126,6 +126,7 @@ test("photos", async () => {
 
 test("search applications: public form settings, private applications, finalist bidbook uploads", async () => {
   await assertSucceeds(getDoc(doc(anon().firestore(), "publicConfig/application")));
+  await assertSucceeds(getDocs(collection(anon().firestore(), "schools")));
   await assertFails(setDoc(doc(admin().firestore(), "publicConfig/application"), { open: false }));
   await assertFails(getDoc(doc(anon().firestore(), "searchApplications/TS2027-0001")));
   await assertFails(getDoc(doc(anonSignIn().firestore(), "searchApplications/TS2027-0001")));
