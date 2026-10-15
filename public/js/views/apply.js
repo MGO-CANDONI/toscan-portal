@@ -1,7 +1,7 @@
 // Public pages (no sign-in): TOSCAN search application, status check and bidbook upload.
 import { auth, db, doc, getDoc, call, storage, ref, uploadBytesResumable, signInAnonymously, signOut } from "../fb.js";
 import { $, $$, esc, toast, fmtDate, manilaToday, printHtml, printHeader } from "../ui.js";
-import { CORE_FIELDS, OTHER_SCHOOL, mergeApplicationConfig, applicationsOpen, APP_STATUS, BIDBOOK_MAX_MB } from "../core/applications.js";
+import { CORE_FIELDS, mergeApplicationConfig, applicationsOpen, APP_STATUS, BIDBOOK_MAX_MB } from "../core/applications.js";
 
 let cached = null;
 /** The public form settings (readable without signing in). */
@@ -48,8 +48,7 @@ export async function applyPage(root) {
     const req = f.required ? "required" : "";
     if (f.type === "textarea") return `<textarea name="${name}" rows="4" ${req}></textarea>`;
     if (f.type === "select") return `<select name="${name}" ${req}><option value="">Choose…</option>${f.options.map(o => `<option>${esc(o)}</option>`).join("")}</select>`;
-    if (f.type === "school") return `<select name="${name}" ${req}><option value="">Choose your school…</option>${schools.map(o => `<option>${esc(o)}</option>`).join("")}<option value="${OTHER_SCHOOL}">Other — my school is not listed</option></select>
-      <input type="text" name="schoolOther" class="hidden" placeholder="Type the full name of your school" style="margin-top:.4rem">`;
+    if (f.type === "school") return `<select name="${name}" ${req}><option value="">Choose your school…</option>${schools.map(o => `<option>${esc(o)}</option>`).join("")}</select>`;
     const t = { tel: "tel", email: "email", date: "date", number: "number" }[f.type] || "text";
     return `<input type="${t}" name="${name}" ${t === "number" ? 'step="any"' : ""} ${req} autocomplete="${{ lastName: "family-name", firstName: "given-name", middleName: "additional-name", email: "email", contact: "tel" }[f.id] || "off"}">`;
   };
@@ -66,7 +65,6 @@ export async function applyPage(root) {
       <div class="btn-row end"><a class="btn" href="#/">Cancel</a><button class="btn primary" type="submit">Submit application</button></div>
     </form>`;
   const f = $("#af", main);
-  f.school.onchange = () => { f.schoolOther.classList.toggle("hidden", f.school.value !== OTHER_SCHOOL); if (f.school.value === OTHER_SCHOOL) f.schoolOther.focus(); };
   f.onsubmit = async ev => {
     ev.preventDefault();
     const msg = $("#am", main); msg.textContent = "";
@@ -74,9 +72,8 @@ export async function applyPage(root) {
     $$(".pub-q", f).forEach(d => d.classList.remove("invalid"));
     missing.forEach(([, n]) => f.elements[n].closest(".pub-q").classList.add("invalid"));
     if (missing.length) { msg.textContent = `Please answer: ${missing.map(([x]) => x.label).join(", ")}.`; f.elements[missing[0][1]].focus(); return; }
-    if (f.school.value === OTHER_SCHOOL && !f.schoolOther.value.trim()) { msg.textContent = "Type the name of your school."; f.schoolOther.focus(); return; }
     if (!f.consent.checked) { msg.textContent = "Please tick the certification and data privacy box."; return; }
-    const data = { consent: true, website: f.website.value, schoolOther: f.schoolOther.value.trim(), answers: {} };
+    const data = { consent: true, website: f.website.value, answers: {} };
     CORE_FIELDS.forEach(x => { data[x.id] = f.elements[x.id].value.trim(); });
     c.questions.forEach(x => { data.answers[x.id] = f.elements[`a_${x.id}`].value.trim(); });
     const btn = f.querySelector("[type=submit]"); btn.disabled = true; btn.textContent = "Submitting…";

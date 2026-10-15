@@ -121,9 +121,8 @@ export function cleanApplicationConfig(d = {}) {
 }
 
 /** Validates an applicant's answers against the form; returns { errors, value }. */
-export const OTHER_SCHOOL = "__other__";
 
-/** The applicant picks a school from the form's own list (Settings → Search applications) or "Other" and types the name. */
+/** The applicant must pick a school from the form's own list (Settings → Search applications). */
 export function validateApplication(config, d = {}) {
   const schools = config?.schools || [];
   const errors = [], value = {}, answers = {};
@@ -131,11 +130,7 @@ export function validateApplication(config, d = {}) {
     value[f.id] = s(d[f.id], f.id === "school" ? 200 : 100);
     if (f.required && !value[f.id]) errors.push(`${f.label} is required.`);
   }
-  if (value.school === OTHER_SCHOOL || (schools?.length && !schools.includes(value.school))) {
-    const other = s(d.schoolOther, 200);
-    if (!other) errors.push("Choose your school from the list, or choose “Other” and type its name.");
-    value.school = other; value.schoolOther = true;
-  }
+  if (value.school && !schools.includes(value.school)) errors.push("Choose your school from the list. If your school is not listed, contact the TOSCAN Office.");
   if (value.email && !EMAIL_RE.test(value.email)) errors.push("Enter a valid e-mail address.");
   if (value.contact && !PHONE_RE.test(value.contact)) errors.push("Enter a valid contact number.");
   for (const q of config?.questions || []) {

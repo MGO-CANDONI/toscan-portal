@@ -319,11 +319,9 @@ test("full program lifecycle", async t => {
     await rejects(call("submitApplication", null, { ...form, answers: {} }), /Grade 9 general average is required/);
     await rejects(call("submitApplication", null, { ...form, consent: false, answers: { q_gwa: "95" } }), /confirm/);
     await rejects(call("submitApplication", null, { ...form, school: "Some School Not In Master", answers: { q_gwa: "95.4" } }), /Choose your school/);
-    const other = await call("submitApplication", null, { ...form, firstName: "Ben", email: "ben@gmail.com", contact: "09181234567", school: "__other__", schoolOther: "St. Joseph Academy", answers: { q_gwa: "90" } });
-    assert.equal(get(`searchApplications/${other.ref}`).school, "St. Joseph Academy");
-    assert.equal(get(`searchApplications/${other.ref}`).schoolOther, true);
+    await rejects(call("submitApplication", null, { ...form, firstName: "Ben", email: "ben@gmail.com", contact: "09181234567", school: "__other__", answers: { q_gwa: "90" } }), /Choose your school/);
     const r = await call("submitApplication", null, { ...form, answers: { q_gwa: "95.4" } });
-    assert.match(r.ref, /^TS2099-0002$/);
+    assert.match(r.ref, /^TS2099-0001$/);
     assert.match(r.code, /^[A-Z2-9]{5}-[A-Z2-9]{5}$/);
     const doc = get(`searchApplications/${r.ref}`);
     assert.equal(doc.status, "Submitted"); assert.equal(doc.answers.q_gwa, "95.4"); assert.equal(doc.codeHash.length, 64);

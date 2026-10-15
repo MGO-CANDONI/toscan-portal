@@ -61,7 +61,7 @@ function detail(a0) {
   const m = openModal(`
     <div class="card-head"><div><div class="xs muted mono">${esc(a.ref)} · ${esc(a.searchTitle)}</div><h2 style="margin:.2rem 0 0">${esc(name(a))}</h2></div>${appBadge(a.status)}</div>
     <dl class="kv small">
-      ${CORE_FIELDS.map(f => `<dt>${esc(f.label)}</dt><dd>${f.id === "email" ? `<a href="mailto:${esc(a.email)}">${esc(a.email)}</a>` : esc(a[f.id])}${f.id === "school" && a.schoolOther ? ` <span class="badge b-warn">Not in master list</span>` : ""}</dd>`).join("")}
+      ${CORE_FIELDS.map(f => `<dt>${esc(f.label)}</dt><dd>${f.id === "email" ? `<a href="mailto:${esc(a.email)}">${esc(a.email)}</a>` : esc(a[f.id])}</dd>`).join("")}
       ${(a.questions || []).map(q => `<dt>${esc(q.label)}</dt><dd>${esc(a.answers?.[q.id] || "—")}</dd>`).join("")}
       <dt>Applied</dt><dd>${fmtDateTime(a.createdAt)}</dd></dl>
     <h3 style="margin-top:1rem">Bidbook</h3>
@@ -124,7 +124,7 @@ export async function formSettings(el, save) {
         <div><label>Contact email</label><input type="email" name="contactEmail" value="${esc(c.contactEmail)}"></div>
       </div></div>
     <div class="card"><h3>Schools</h3>
-      <p class="small muted">The schools applicants can choose from — the high schools in the search area. This list is separate from the schools in master data (which are the colleges and universities of current students). One per line; applicants whose school is not listed can choose “Other” and type it.</p>
+      <p class="small muted">The schools applicants can choose from — the high schools in the search area. This list is separate from the schools in master data (which are the colleges and universities of current students). One per line; applicants can only choose from this list.</p>
       <textarea name="schools" rows="8" placeholder="Candoni National High School">${esc((c.schools || []).join("\n"))}</textarea></div>
     <div class="card"><h3>Questions</h3>
       <p class="small muted">Always asked: ${CORE_FIELDS.map(f => esc(f.label)).join(", ")}, and the data privacy consent. Add any other questions below. Changing questions doesn't alter applications already received.</p>
