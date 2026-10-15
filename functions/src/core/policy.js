@@ -280,6 +280,7 @@ export function checkPayrollAction(payroll, action, actor, input = {}, today) {
   if (!rule) return "Unknown payroll action.";
   if (!hasPermission(actor, rule.perm)) return "You are not authorized for this payroll action.";
   if (!rule.from.includes(payroll.status)) return `A payroll that is ${payroll.status} can't be changed this way.`;
+  if (action === "submitReview" && !String(input.dvNo || "").trim()) return "Enter the Disbursement Voucher (DV) number assigned by the Accounting Office.";
   if (action === "review" && payroll.preparedBy?.uid === actor.uid && actor.role !== "admin") return "The reviewer must be a different person from the preparer.";
   if (action === "approve" && !payroll.reviewedBy) return "The payroll must be reviewed before approval.";
   if (action === "approve" && !(payroll.itemCount > 0)) return "An empty payroll can't be approved.";

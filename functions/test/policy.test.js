@@ -144,7 +144,8 @@ test("payroll workflow guards", () => {
   const admin = { uid: "ad", role: "admin" };
   const student = { uid: "st", role: "student" };
   const p = st => ({ status: st, itemCount: 3, preparedBy: { uid: "s1" }, reviewedBy: null });
-  assert.equal(checkPayrollAction(p(PAYROLL.GENERATED), "submitReview", staff), null);
+  assert.match(checkPayrollAction(p(PAYROLL.GENERATED), "submitReview", staff), /DV/);
+  assert.equal(checkPayrollAction(p(PAYROLL.GENERATED), "submitReview", staff, { dvNo: "DV-2026-10-0012" }), null);
   assert.match(checkPayrollAction(p(PAYROLL.REVIEW), "review", staff), /different person/);
   assert.match(checkPayrollAction(p(PAYROLL.REVIEW), "approve", student), /not authorized/);
   assert.match(checkPayrollAction(p(PAYROLL.REVIEW), "approve", approver), /reviewed before/);

@@ -73,6 +73,11 @@ Delivered as one release covering phases 1–7 of the enhancement requirements.
 - **Application form.** The school is chosen from the schools in master data (Settings → Schools), with an "Other — not listed" option; applications from unlisted schools are flagged for staff.
 - **Security rules.** `schools` is readable without signing in (names only; needed by the public form). Run `tests/` to confirm.
 
+## Update — October 15, 2026 (evening)
+
+- **Payroll → Accounting.** A prepared payroll is now **forwarded to the Accounting Office under a DV number**: the staff member enters the Disbursement Voucher number when forwarding (required), and it appears on the payroll list, the payroll page, the activity log and the printed payroll. The rest of the flow (review by a different person → approve → release with payment date and reference) is unchanged.
+- **Application schools.** The application form has its own list of schools (Settings → Search applications → Schools), separate from the master-data schools used for current students.
+
 ## Outstanding items
 
 1. Run the security-rules tests and a pilot with real accounts on the deployed project before announcing the portal.

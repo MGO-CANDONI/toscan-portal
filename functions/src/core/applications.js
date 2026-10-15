@@ -60,11 +60,12 @@ export const DEFAULT_APPLICATION_CONFIG = {
   closesOn: "",
   bidbookTemplateUrl: "https://docs.google.com/document/d/1CWj7P_urfFgJj9ZmyCRW5IwcrcUbtMuw/edit",
   bidbookDeadline: "",
+  schools: [],
   questions: []
 };
 
 export function mergeApplicationConfig(stored) {
-  return { ...DEFAULT_APPLICATION_CONFIG, ...(stored || {}), questions: Array.isArray(stored?.questions) ? stored.questions : [] };
+  return { ...DEFAULT_APPLICATION_CONFIG, ...(stored || {}), schools: Array.isArray(stored?.schools) ? stored.schools : [], questions: Array.isArray(stored?.questions) ? stored.questions : [] };
 }
 
 /** Applications are accepted when open and (if set) on or before the closing date (Asia/Manila). */
@@ -96,6 +97,7 @@ export function cleanApplicationConfig(d = {}) {
     closesOn: d.closesOn || "",
     bidbookTemplateUrl: s(d.bidbookTemplateUrl, 500),
     bidbookDeadline: d.bidbookDeadline || "",
+    schools: [...new Set((Array.isArray(d.schools) ? d.schools : []).map(x => s(x, 160)).filter(Boolean))].slice(0, 200),
     questions: []
   };
   if (!value.title) errors.push("The form needs a title.");
@@ -121,8 +123,9 @@ export function cleanApplicationConfig(d = {}) {
 /** Validates an applicant's answers against the form; returns { errors, value }. */
 export const OTHER_SCHOOL = "__other__";
 
-/** schools: names from master data; the applicant picks one or "Other" and types the name. */
-export function validateApplication(config, d = {}, schools = null) {
+/** The applicant picks a school from the form's own list (Settings → Search applications) or "Other" and types the name. */
+export function validateApplication(config, d = {}) {
+  const schools = config?.schools || [];
   const errors = [], value = {}, answers = {};
   for (const f of CORE_FIELDS) {
     value[f.id] = s(d[f.id], f.id === "school" ? 200 : 100);

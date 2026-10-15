@@ -1,5 +1,5 @@
 // Public pages (no sign-in): TOSCAN search application, status check and bidbook upload.
-import { auth, db, doc, getDoc, getDocs, collection, call, storage, ref, uploadBytesResumable, signInAnonymously, signOut } from "../fb.js";
+import { auth, db, doc, getDoc, call, storage, ref, uploadBytesResumable, signInAnonymously, signOut } from "../fb.js";
 import { $, $$, esc, toast, fmtDate, manilaToday, printHtml, printHeader } from "../ui.js";
 import { CORE_FIELDS, OTHER_SCHOOL, mergeApplicationConfig, applicationsOpen, APP_STATUS, BIDBOOK_MAX_MB } from "../core/applications.js";
 
@@ -38,7 +38,7 @@ export async function loginCard(el) {
 export async function applyPage(root) {
   root.innerHTML = `<div class="pub">${header("")}<main class="pub-main"><div class="loading">Loading the application form…</div></main></div>`;
   const c = await loadApplicationConfig(true);
-  const schools = await getDocs(collection(db, "schools")).then(x => x.docs.map(d => d.data()).filter(d => d.active !== false).map(d => d.name).sort()).catch(() => []);
+  const schools = c?.schools || [];
   const main = $(".pub-main", root);
   if (!c || !applicationsOpen(c, manilaToday())) {
     main.innerHTML = `<div class="card pub-card"><h1>Applications are closed</h1><p class="muted">The TOSCAN Office is not accepting applications right now.${c?.contactEmail ? ` For questions, write to <a href="mailto:${esc(c.contactEmail)}">${esc(c.contactEmail)}</a>.` : ""}</p><div class="btn-row"><a class="btn" href="#/track">Check an application</a><a class="btn" href="#/">Back to sign in</a></div></div>`;

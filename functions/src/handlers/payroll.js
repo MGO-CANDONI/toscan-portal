@@ -57,7 +57,7 @@ export async function generatePayrollCore({ month, a = null, auto = false }) {
     payrollNo, month, status: auto ? PAYROLL.GENERATED : PAYROLL.DRAFT, auto, autoMonth: auto ? month : null,
     itemCount: 0, total: 0, academicYears: [], periods: [],
     generatedBy: by, preparedBy: null, reviewedBy: null, approvedBy: null,
-    releasedAt: null, paymentRef: null, createdAt: now(), updatedAt: now(),
+    releasedAt: null, paymentRef: null, dvNo: null, createdAt: now(), updatedAt: now(),
     history: [{ at: new Date().toISOString(), by: by.name, action: "generated" }]
   });
 
@@ -103,14 +103,15 @@ async function setEligibilityStatus(items, status) {
   await chunkedWrites(ids.map(id => b => b.update(db.doc(`eligibility/${id}`), { status, updatedAt: now() })));
 }
 
-/** data: { payrollNo, action, itemId?, paymentDate?, paymentRef?, reason? } */
+/** data: { payrollNo, action, itemId?, dvNo?, paymentDate?, paymentRef?, reason? }
+ * submitReview = the prepared payroll is forwarded to the Accounting Office under a DV number. */
 export const payrollAction = onCall(async request => {
   const a = await actor(request, { roles: ["staff", "admin"] });
   const { payrollNo, action } = request.data || {};
-  const input = { paymentDate: request.data?.paymentDate, paymentRef: str(request.data?.paymentRef, 120), reason: str(request.data?.reason, 500) };
+  const input = { paymentDate: request.data?.paymentDate, paymentRef: str(request.data?.paymentRef, 120), dvNo: str(request.data?.dvNo, 60), reason: str(request.data?.reason, 500) };
   const pref = db.doc(`payrolls/${payrollNo}`);
   const settings = await getSettings();
-  const entry = { at: new Date().toISOString(), by: a.name, action, ...(input.reason ? { reason: input.reason } : {}), ...(input.paymentRef ? { paymentRef: input.paymentRef } : {}) };
+  const entry = { at: new Date().toISOString(), by: a.name, action, ...(input.reason ? { reason: input.reason } : {}), ...(input.paymentRef ? { paymentRef: input.paymentRef } : {}), ...(input.dvNo ? { dvNo: input.dvNo } : {}) };
 
   // 1. Status change, checked and applied atomically.
   const before = await db.runTransaction(async tx => {
@@ -121,7 +122,7 @@ export const payrollAction = onCall(async request => {
     if (err) conflict(err);
     const me = { uid: a.uid, name: a.name, at: new Date().toISOString() };
     const upd = { updatedAt: now(), history: [...(p.history || []), entry] };
-    if (action === "submitReview") Object.assign(upd, { status: PAYROLL.REVIEW, preparedBy: me, reviewedBy: null });
+    if (action === "submitReview") Object.assign(upd, { status: PAYROLL.REVIEW, preparedBy: me, reviewedBy: null, dvNo: input.dvNo, forwardedToAccountingAt: me.at });
     if (action === "review") Object.assign(upd, { reviewedBy: me });
     if (action === "approve") Object.assign(upd, { status: PAYROLL.APPROVED, approvedBy: me, signatories: settings.payroll.signatories, signatoryTitles: settings.payroll.signatoryTitles || null });
     if (action === "release") Object.assign(upd, { status: PAYROLL.RELEASED, releasedAt: input.paymentDate, paymentRef: input.paymentRef, releasedBy: me });

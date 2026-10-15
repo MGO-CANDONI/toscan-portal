@@ -123,6 +123,9 @@ export async function formSettings(el, save) {
         <div><label>General Guidelines link</label><input type="url" name="guidelinesUrl" placeholder="https://…" value="${esc(c.guidelinesUrl)}"></div>
         <div><label>Contact email</label><input type="email" name="contactEmail" value="${esc(c.contactEmail)}"></div>
       </div></div>
+    <div class="card"><h3>Schools</h3>
+      <p class="small muted">The schools applicants can choose from — the high schools in the search area. This list is separate from the schools in master data (which are the colleges and universities of current students). One per line; applicants whose school is not listed can choose “Other” and type it.</p>
+      <textarea name="schools" rows="8" placeholder="Candoni National High School">${esc((c.schools || []).join("\n"))}</textarea></div>
     <div class="card"><h3>Questions</h3>
       <p class="small muted">Always asked: ${CORE_FIELDS.map(f => esc(f.label)).join(", ")}, and the data privacy consent. Add any other questions below. Changing questions doesn't alter applications already received.</p>
       <div id="qs"></div><button type="button" class="btn" id="addq">+ Add question</button></div>
@@ -150,6 +153,7 @@ export async function formSettings(el, save) {
     const data = {
       open: f.open.checked, title: f.title.value, closesOn: f.closesOn.value, intro: f.intro.value, guidelinesUrl: f.guidelinesUrl.value.trim(),
       contactEmail: f.contactEmail.value.trim(), bidbookTemplateUrl: f.bidbookTemplateUrl.value.trim(), bidbookDeadline: f.bidbookDeadline.value,
+      schools: f.schools.value.split("\n").map(x => x.trim()).filter(Boolean),
       questions: qs.filter(q => q.label.trim())
     };
     save("applicationForm", null, data, f.querySelector("[type=submit]"), "Application form saved.").then(() => formSettings(el, save)).catch(() => {});

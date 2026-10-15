@@ -180,7 +180,9 @@ test("full program lifecycle", async t => {
     await rejects(call("decideEligibility", "staff", { studentId: "TO2-201001", academicYear: AY, period: "P1", decision: "Not Qualified", reason: "x" }), /already in a payroll/);
 
     const P = "PR-2026-10-001";
-    await call("payrollAction", "staff", { payrollNo: P, action: "submitReview" });
+    await rejects(call("payrollAction", "staff", { payrollNo: P, action: "submitReview" }), /DV/);
+    await call("payrollAction", "staff", { payrollNo: P, action: "submitReview", dvNo: "DV-2026-10-0012" });
+    assert.equal(get(`payrolls/${P}`).dvNo, "DV-2026-10-0012");
     await rejects(call("payrollAction", "staff", { payrollNo: P, action: "review" }), /different person/);
     await rejects(call("payrollAction", "admin", { payrollNo: P, action: "approve" }), /reviewed before/);
     await call("payrollAction", "admin", { payrollNo: P, action: "review" });
@@ -309,11 +311,11 @@ test("full program lifecycle", async t => {
   });
 
   await t.test("search applications: apply without signing in, finalist uploads bidbook", async () => {
-    const form = { lastName: "Santos", firstName: "Ana", middleName: "N/A", school: "CANDONI NATIONAL HIGH SCHOOL", contact: "09171234567", email: "ana@gmail.com", consent: true };
+    const form = { lastName: "Santos", firstName: "Ana", middleName: "N/A", school: "Caningay National High School", contact: "09171234567", email: "ana@gmail.com", consent: true };
     await rejects(call("submitApplication", null, form), /not being accepted/);
     await rejects(call("saveMasterData", "staff", { kind: "applicationForm", data: { title: "X" } }), /not allowed|authorized/);
     await rejects(call("saveMasterData", "admin", { kind: "applicationForm", data: { title: "T", questions: [{ id: "q_gwa", label: "GWA", type: "select", options: ["A"] }] } }), /two choices/);
-    await call("saveMasterData", "admin", { kind: "applicationForm", data: { open: true, title: "TOSCAN APPLICATION 2099", closesOn: "2099-12-31", bidbookDeadline: "2099-12-31", questions: [{ id: "q_gwa", label: "Grade 9 general average", type: "number", required: true }] } });
+    await call("saveMasterData", "admin", { kind: "applicationForm", data: { open: true, title: "TOSCAN APPLICATION 2099", closesOn: "2099-12-31", bidbookDeadline: "2099-12-31", schools: ["Candoni National High School", "Caningay National High School", ""], questions: [{ id: "q_gwa", label: "Grade 9 general average", type: "number", required: true }] } });
     await rejects(call("submitApplication", null, { ...form, answers: {} }), /Grade 9 general average is required/);
     await rejects(call("submitApplication", null, { ...form, consent: false, answers: { q_gwa: "95" } }), /confirm/);
     await rejects(call("submitApplication", null, { ...form, school: "Some School Not In Master", answers: { q_gwa: "95.4" } }), /Choose your school/);

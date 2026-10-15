@@ -39,9 +39,7 @@ export const submitApplication = onCall(async request => {
   if (!applicationsOpen(config, today)) conflict("Applications are not being accepted right now.");
   const d = request.data || {};
   if (d.website) bad("Invalid submission."); // honeypot field, hidden from people
-  const schoolSnap = await db.collection("schools").get();
-  const schools = schoolSnap.docs.map(x => x.data()).filter(x => x.active !== false).map(x => x.name);
-  const { errors, value } = validateApplication(config, d, schools);
+  const { errors, value } = validateApplication(config, d);
   if (errors.length) bad(errors.join(" "));
   const year = (String(config.title).match(/\b(20\d{2})\b/) || [])[1] || (config.closesOn || today).slice(0, 4);
   const key = applicantKey(value);

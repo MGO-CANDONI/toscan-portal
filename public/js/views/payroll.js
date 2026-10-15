@@ -7,6 +7,7 @@ import {
 } from "../ui.js";
 
 const ACTIVE = ["Draft", "Generated", "For Review", "Approved"];
+const ACTION_NAMES = { generated: "Generated", submitReview: "Forwarded to Accounting", review: "Reviewed", approve: "Approved", release: "Released", archive: "Archived", void: "Voided", removeItem: "Line removed" };
 
 export function list(main) {
   const pays = [...(S.d.payrolls || [])].sort((a, b) => b.payrollNo.localeCompare(a.payrollNo));
@@ -35,6 +36,7 @@ export function list(main) {
       { label: "Lines", render: p => esc(p.itemCount), sort: p => p.itemCount, cls: "right" },
       { label: "Total", render: p => money(p.total), sort: p => p.total, cls: "right" },
       { label: "Status", render: p => payrollBadge(p.status), sort: p => p.status },
+      { label: "DV No.", render: p => p.dvNo ? `<span class="mono">${esc(p.dvNo)}</span>` : "—", sort: p => p.dvNo || "" },
       { label: "Released", render: p => p.releasedAt ? `${fmtDate(p.releasedAt)}<div class="xs muted">${esc(p.paymentRef)}</div>` : "—" }
     ],
     empty: "No payrolls yet.",
@@ -68,7 +70,7 @@ export async function detail(main, [no]) {
   const btn = (action, label, cls = "", show = true) => show ? `<button class="btn ${cls}" data-act="${action}">${esc(label)}</button>` : "";
   main.innerHTML = `
     <div class="page-head"><div><a href="#/payroll" class="small">← Payroll</a><h1 class="mono" style="margin-top:.3rem">${esc(p.payrollNo)} ${payrollBadge(p.status)}</h1>
-      <p>Payroll month ${esc(p.month)} · ${lines.length} line(s) · ${money(total)}</p></div>
+      <p>Payroll month ${esc(p.month)} · ${lines.length} line(s) · ${money(total)}${p.dvNo ? ` · DV No. ${esc(p.dvNo)}` : ""}</p></div>
       <div class="btn-row"><button class="btn" id="print">Print / PDF</button><button class="btn" id="xlsx">Excel</button><button class="btn" id="csv">CSV</button></div></div>
     ${p.status === "Voided" ? `<div class="notice bad">Voided: ${esc(p.voidReason || "")}. Its allowances were returned to the waiting list.</div>` : ""}
     <div class="split">
@@ -82,13 +84,13 @@ export async function detail(main, [no]) {
         <div class="card"><h3>Workflow</h3>
           <ul class="timeline small">
             <li class="done"><b>Generated</b><div class="when">${esc(p.generatedBy?.name || "")} · ${fmtDateTime(p.createdAt)}</div></li>
-            <li class="${p.preparedBy ? "done" : "current"}"><b>Prepared &amp; submitted for review</b><div class="when">${p.preparedBy ? `${esc(p.preparedBy.name)} · ${fmtDateTime(p.preparedBy.at)}` : "Pending"}</div></li>
+            <li class="${p.preparedBy ? "done" : "current"}"><b>Forwarded to Accounting${p.dvNo ? ` — DV No. ${esc(p.dvNo)}` : ""}</b><div class="when">${p.preparedBy ? `${esc(p.preparedBy.name)} · ${fmtDateTime(p.preparedBy.at)}` : "Pending — assign the DV number once the payroll is with the Accounting Office"}</div></li>
             <li class="${p.reviewedBy ? "done" : ""}"><b>Reviewed</b><div class="when">${p.reviewedBy ? `${esc(p.reviewedBy.name)} · ${fmtDateTime(p.reviewedBy.at)}` : "Pending"}</div></li>
             <li class="${p.approvedBy ? "done" : ""}"><b>Approved / finalized</b><div class="when">${p.approvedBy ? `${esc(p.approvedBy.name)} · ${fmtDateTime(p.approvedBy.at)}` : "Pending"}</div></li>
             <li class="${p.releasedAt ? "done" : ""}"><b>Released</b><div class="when">${p.releasedAt ? `${fmtDate(p.releasedAt)} · Ref. ${esc(p.paymentRef)} · ${esc(p.releasedBy?.name || "")}` : "Pending"}</div></li>
           </ul>
           <div class="btn-row">
-            ${btn("submitReview", "Submit for review", "primary", ["Draft", "Generated"].includes(p.status) && can("preparePayroll"))}
+            ${btn("submitReview", "Forward to Accounting…", "primary", ["Draft", "Generated"].includes(p.status) && can("preparePayroll"))}
             ${btn("review", "Mark as reviewed", "primary", p.status === "For Review" && !p.reviewedBy && can("preparePayroll") && (p.preparedBy?.uid !== me || isAdmin()))}
             ${btn("approve", "Approve & finalize", "ok", p.status === "For Review" && p.reviewedBy && can("approvePayroll"))}
             ${btn("release", "Record release…", "ok", p.status === "Approved" && can("releasePayroll"))}
@@ -97,13 +99,17 @@ export async function detail(main, [no]) {
           </div>
           ${p.status === "For Review" && p.preparedBy?.uid === me && !isAdmin() ? `<p class="xs muted">A different staff member must review a payroll you prepared.</p>` : ""}
         </div>
-        <div class="card"><h3>Activity</h3><ul class="timeline small">${(p.history || []).slice().reverse().map(h => `<li><b>${esc(h.action)}</b><div class="when">${fmtDateTime(h.at)} · ${esc(h.by)}${h.reason ? ` · ${esc(h.reason)}` : ""}${h.paymentRef ? ` · Ref. ${esc(h.paymentRef)}` : ""}</div></li>`).join("")}</ul></div>
+        <div class="card"><h3>Activity</h3><ul class="timeline small">${(p.history || []).slice().reverse().map(h => `<li><b>${esc(ACTION_NAMES[h.action] || h.action)}</b><div class="when">${fmtDateTime(h.at)} · ${esc(h.by)}${h.reason ? ` · ${esc(h.reason)}` : ""}${h.dvNo ? ` · DV No. ${esc(h.dvNo)}` : ""}${h.paymentRef ? ` · Ref. ${esc(h.paymentRef)}` : ""}</div></li>`).join("")}</ul></div>
       </div></div>`;
 
   $$("[data-act]", main).forEach(b => b.onclick = async () => {
     const action = b.dataset.act;
     let extra = {};
-    if (action === "release") {
+    if (action === "submitReview") {
+      const v = await confirmBox({ title: "Forward to the Accounting Office", body: `${lines.length} line(s), ${money(total)}. Enter the Disbursement Voucher number assigned to this payroll. The DV number shows that the document is with the Accounting Office for processing.`, confirmText: "Forward with DV No.", fields: [
+        { name: "dvNo", label: "DV No.", placeholder: "e.g. 2026-10-0012", required: true }] });
+      if (!v) return; extra = v;
+    } else if (action === "release") {
       const v = await confirmBox({ title: "Record payroll release", body: "Enter the actual payment details. Students are notified that their allowance was released.", confirmText: "Record release", fields: [
         { name: "paymentDate", label: "Actual payment date", type: "date", max: manilaToday(), required: true },
         { name: "paymentRef", label: "Payment reference (check, LDDAP-ADA or DV number)", required: true }] });
@@ -134,7 +140,7 @@ function printPayroll(p, lines, total) {
   const sig = p.signatories || cfg.signatories, titles = p.signatoryTitles || cfg.signatoryTitles || {};
   const T = { a: titles.a || "Authorized Personnel", b: titles.b || "Head, Accounting Division", c: titles.c || "Head, Treasury Division", d: titles.d || "Local Chief Executive" };
   printHtml(`${printHeader("TOSCAN ALLOWANCE PAYROLL", `Ten Outstanding Students of Candoni — Payroll No. ${p.payrollNo}`)}
-    <div class="pmeta"><span>Payroll month: <b>${esc(p.month)}</b></span><span>School year(s): <b>${esc((p.academicYears || []).join(", "))}</b></span><span>Allowance period(s): <b>${esc((p.periods || []).map(x => PERIOD_NAMES[x]).join(", "))}</b></span><span>Status: <b>${esc(p.status)}</b></span></div>
+    <div class="pmeta"><span>Payroll month: <b>${esc(p.month)}</b></span><span>School year(s): <b>${esc((p.academicYears || []).join(", "))}</b></span><span>Allowance period(s): <b>${esc((p.periods || []).map(x => PERIOD_NAMES[x]).join(", "))}</b></span><span>DV No.: <b>${esc(p.dvNo || "—")}</b></span><span>Status: <b>${esc(p.status)}</b></span></div>
     <table class="pt"><thead><tr><th>No.</th><th>Student Name</th><th>TOSCAN ID</th><th>Batch</th><th>Class.</th><th>Current School</th><th>Allowance Type</th><th>Period / SY</th><th>ATM Number</th><th style="text-align:right">Amount</th><th>Signature</th></tr></thead>
     <tbody>${lines.map((i, n) => `<tr><td>${n + 1}</td><td>${esc(i.studentName)}</td><td>${esc(i.studentId)}</td><td>${esc(i.batch)}</td><td>${esc(CLASS_SHORT[i.classification] || "")}</td><td>${esc(i.school)}</td><td>${esc(i.typeName)}</td><td>${esc(PERIOD_NAMES[i.period])} ${esc(i.academicYear)}</td><td>${esc(i.atmNumber)}</td><td style="text-align:right">${money(i.amount)}</td><td style="width:90px"></td></tr>`).join("")}
       <tr><td colspan="9" style="text-align:right;font-weight:700">TOTAL</td><td style="text-align:right;font-weight:700">${money(total)}</td><td></td></tr></tbody></table>
