@@ -90,6 +90,16 @@ Commit and **Push origin** in GitHub Desktop. Netlify publishes `public/` automa
 4. Encode or import past payments under **Historical Records** before the first payroll, so nothing already paid is paid again.
 5. Ask staff and students to register; approve them under **Registrations**.
 
+## 7b. Clear test data before go-live
+
+Once testing is finished and before real students register, run from the repository folder in PowerShell:
+
+```powershell
+.\scripts\reset-test-data.ps1
+```
+
+It deletes test students, accounts (except administrators), documents, payrolls, applications, notifications and uploaded files, and keeps all settings and master data. Then delete the test sign-ins under **Authentication → Users**.
+
 ## 8. Run the security-rules tests (recommended before go-live)
 
 ```bash
