@@ -132,7 +132,7 @@ export async function formSettings(el, save) {
     <div class="card"><h3>Bidbook (Top 20 finalists)</h3><div class="grid g2">
       <div class="spanall"><label>Bidbook form link (shown on the sign-in page)</label><input type="url" name="bidbookTemplateUrl" value="${esc(c.bidbookTemplateUrl)}"><div class="xs muted">Share the file as “Anyone with the link can view” so applicants can download it.</div></div>
       <div><label>Last day to upload bidbooks (blank = no deadline)</label><input type="date" name="bidbookDeadline" value="${esc(c.bidbookDeadline)}"></div></div>
-      <p class="small muted">Finalists upload one PDF (up to 25 MB) using their reference number and access code. Uploads need <b>Anonymous</b> sign-in switched on in Firebase → Authentication → Sign-in method.</p></div>
+      <p class="small muted">Applicants receive an email when they apply, when they are selected as finalists, and when results are recorded. Emails are sent through the “Trigger Email from Firestore” extension (see DEPLOYMENT.md §3). Finalists upload one PDF (up to 25 MB) using their reference number and access code. Uploads need <b>Anonymous</b> sign-in switched on in Firebase → Authentication → Sign-in method.</p></div>
     <div class="btn-row end"><a class="btn" href="#/apply" target="_blank" rel="noopener">Preview form</a><button class="btn primary" type="submit">Save application form</button></div></form>`;
   const f = $("#apf", el);
   const read = () => $$(".q-row", el).forEach(r => {

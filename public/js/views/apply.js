@@ -94,6 +94,7 @@ function done(main, r, data, c) {
     <h1>Application received</h1>
     <p>Thank you, ${esc(data.firstName)}. Your application to the <b>${esc(r.title)}</b> was received.</p>
     <div class="code-box"><div><span>Reference number</span><b>${esc(r.ref)}</b></div><div><span>Access code</span><b>${esc(r.code)}</b></div></div>
+    <p class="small muted">A confirmation with these details was also sent to <b>${esc(data.email)}</b>. Check your Spam folder if it doesn't arrive.</p>
     <div class="notice warn small"><b>Save these now</b> — take a screenshot or write them down. You need both to check your status and, if you are selected as a Top 20 finalist, to upload your bidbook. The access code is shown only once.</div>
     <div class="btn-row"><button class="btn" id="pr">Print / save as PDF</button><a class="btn primary" href="#/track">Check status</a><a class="btn" href="#/">Back to sign in</a></div>
   </div>`;

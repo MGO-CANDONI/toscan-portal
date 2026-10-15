@@ -78,6 +78,11 @@ Delivered as one release covering phases 1–7 of the enhancement requirements.
 - **Payroll → Accounting.** A prepared payroll is now **forwarded to the Accounting Office under a DV number**: the staff member enters the Disbursement Voucher number when forwarding (required), and it appears on the payroll list, the payroll page, the activity log and the printed payroll. The rest of the flow (review by a different person → approve → release with payment date and reference) is unchanged.
 - **Application schools.** The application form has its own list of schools (Settings → Search applications → Schools), separate from the master-data schools used for current students.
 
+## Update — October 16, 2026
+
+- **Application confirmation email.** Every applicant is emailed their reference number and access code on submission (and again when selected as a finalist or when results are recorded), independent of the portal-users email switch. Requires the Trigger Email extension (DEPLOYMENT.md §3).
+- **One application per student.** A second application in the same search is refused when the e-mail address, the contact number, or the full name already exists on the list; the message says which one matched.
+
 ## Outstanding items
 
 1. Run the security-rules tests and a pilot with real accounts on the deployed project before announcing the portal.

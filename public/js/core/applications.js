@@ -152,5 +152,11 @@ export function validateApplication(config, d = {}) {
   return { errors, value };
 }
 
-/** Normalized key used to detect a second application by the same person in one search. */
-export const applicantKey = v => [v.lastName, v.firstName, v.email].map(x => String(x || "").trim().toLowerCase().replace(/\s+/g, " ")).join("|");
+/** Normalized keys used to refuse a second application by the same person in one search. */
+const norm = x => String(x || "").trim().toLowerCase().replace(/\s+/g, " ");
+export const applicantKeys = v => ({
+  nameKey: [v.lastName, v.firstName, v.middleName && !/^n\/?a$/i.test(String(v.middleName).trim()) ? v.middleName : ""].map(norm).join("|"),
+  emailKey: norm(v.email),
+  contactKey: String(v.contact || "").replace(/\D/g, "").replace(/^63/, "0").replace(/^(?!0)/, "0")
+});
+export const applicantKey = v => { const k = applicantKeys(v); return `${k.nameKey}|${k.emailKey}`; };

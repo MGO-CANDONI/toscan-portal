@@ -5,7 +5,7 @@ import { createHash, randomInt } from "node:crypto";
 import { db, now, actor, audit, notify, usersWith, bad, notFound, conflict, fail, str, getSettings, bucket } from "../fb.js";
 import {
   APP_STATUS, APP_TRANSITIONS, APP_STATUS_TEXT, BIDBOOK_MAX_MB, mergeApplicationConfig, applicationsOpen, bidbookOpen,
-  validateApplication, applicantKey
+  validateApplication, applicantKey, applicantKeys
 } from "../core/applications.js";
 import { manilaToday } from "../core/dates.js";
 
@@ -25,11 +25,10 @@ const hashCode = (ref, code) => createHash("sha256").update(`${ref}:${String(cod
 const fmtCode = c => `${c.slice(0, 5)}-${c.slice(5)}`;
 const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
+/** Applicants are always emailed (they have no portal account). Delivery needs the "Trigger Email from Firestore" extension on the `mail` collection. */
 async function mailApplicant(to, subject, html) {
   if (!to) return;
-  const settings = await getSettings();
-  if (!settings.notifications.emailEnabled) return;
-  await db.collection("mail").add({ to, createdAt: now(), message: { subject: `TOSCAN — ${subject}`, html: `${html}<p>— TOSCAN Office, Municipal Government of Candoni</p>` } });
+  await db.collection("mail").doc().set({ to, createdAt: now(), message: { subject: `TOSCAN — ${subject}`, html: `${html}<p>— TOSCAN Office, Municipal Government of Candoni</p>` } });
 }
 
 /** Public: submit an application. No sign-in needed. Returns the reference number and access code (shown once). */
@@ -42,9 +41,10 @@ export const submitApplication = onCall(async request => {
   const { errors, value } = validateApplication(config, d);
   if (errors.length) bad(errors.join(" "));
   const year = (String(config.title).match(/\b(20\d{2})\b/) || [])[1] || (config.closesOn || today).slice(0, 4);
-  const key = applicantKey(value);
-  const dup = await db.collection("searchApplications").where("searchTitle", "==", config.title).where("applicantKey", "==", key).limit(1).get();
-  if (!dup.empty) conflict("An application with this name and e-mail address was already received for this search. Use your reference number and access code to check its status, or contact the TOSCAN Office.");
+  const key = applicantKey(value), keys = applicantKeys(value);
+  const taken = async (field, v) => !(await db.collection("searchApplications").where("searchTitle", "==", config.title).where(field, "==", v).limit(1).get()).empty;
+  const what = (await taken("emailKey", keys.emailKey)) ? "e-mail address" : (await taken("contactKey", keys.contactKey)) ? "contact number" : (await taken("nameKey", keys.nameKey)) ? "name" : null;
+  if (what) conflict(`An application with this ${what} was already received for this search. Only one application per student is allowed. Use your reference number and access code to check its status, or contact the TOSCAN Office.`);
 
   const code = newCode();
   const ref = await db.runTransaction(async tx => {
@@ -55,7 +55,7 @@ export const submitApplication = onCall(async request => {
     tx.set(cref, { n });
     tx.set(db.doc(`searchApplications/${appRef}`), {
       ref: appRef, searchTitle: config.title, searchYear: year, ...value,
-      emailLower: value.email.toLowerCase(), applicantKey: key,
+      emailLower: value.email.toLowerCase(), applicantKey: key, ...keys,
       questions: (config.questions || []).map(q => ({ id: q.id, label: q.label })),
       status: APP_STATUS.SUBMITTED, statusHistory: [{ status: APP_STATUS.SUBMITTED, at: new Date().toISOString(), by: "Applicant" }],
       publicMessage: "", codeHash: hashCode(appRef, code), failedLookups: 0, lockedUntil: null,

@@ -35,7 +35,7 @@ Only a **verified Google account** listed here can press **Claim administrator a
 
 1. **Authentication → Sign-in method** → enable **Google**, **Email/Password** and **Anonymous** (Anonymous is used only so Top 20 finalists can upload a bidbook from the public page; it gives no access to portal data).
 2. **Authentication → Settings → Authorized domains** → add the Netlify address (e.g. `toscan-candoni.netlify.app`) and any custom domain.
-3. *(Optional, for email notifications)* **Extensions → Trigger Email from Firestore**, collection `mail`. Then tick “Also send notifications by email” in **Settings & Master Data**.
+3. **Extensions → Trigger Email from Firestore**, collection `mail`. Needed for the TOSCAN search: applicants have no portal account, so their confirmation, finalist notice and results go by email. SMTP: a Gmail address with an App Password (smtps://USER:APPPASSWORD@smtp.gmail.com:465) or the LGU mail server. Email for portal users is optional: tick “Also send notifications by email” in **Settings & Master Data**.
 
 ## 4. Deploy the backend
 
