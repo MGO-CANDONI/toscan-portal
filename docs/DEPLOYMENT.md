@@ -33,7 +33,7 @@ Only a **verified Google account** listed here can press **Claim administrator a
 
 <https://console.firebase.google.com> → **mgo-toscan**:
 
-1. **Authentication → Sign-in method** → enable **Google** and **Email/Password**.
+1. **Authentication → Sign-in method** → enable **Google**, **Email/Password** and **Anonymous** (Anonymous is used only so Top 20 finalists can upload a bidbook from the public page; it gives no access to portal data).
 2. **Authentication → Settings → Authorized domains** → add the Netlify address (e.g. `toscan-candoni.netlify.app`) and any custom domain.
 3. *(Optional, for email notifications)* **Extensions → Trigger Email from Firestore**, collection `mail`. Then tick “Also send notifications by email” in **Settings & Master Data**.
 
@@ -52,6 +52,14 @@ firebase deploy --only firestore:rules,firestore:indexes,storage,functions
 - The first functions deploy asks to enable Cloud Functions, Cloud Build, Artifact Registry and Cloud Scheduler APIs: answer **yes**.
 - The `dailyJobs` function creates a Cloud Scheduler job (06:00 Asia/Manila) automatically.
 - Functions run in `asia-southeast1` (Singapore).
+
+### Functions added later (October 2026: TOSCAN search applications)
+
+If the website shows “The server could not complete the request” on the application form, allow public calls to the new functions (Command Prompt, one line):
+
+```
+for %f in (submitapplication applicationstatus submitbidbook reviewapplication) do gcloud functions add-invoker-policy-binding %f --region=asia-southeast1 --member=allUsers --project=mgo-toscan
+```
 
 ## 5. Allow the browser to open private files (Storage CORS)
 
@@ -77,6 +85,7 @@ Commit and **Push origin** in GitHub Desktop. Netlify publishes `public/` automa
    - **Allowance types & rates**: enter the rate and effective date for **Regular** and **Latin Honor** (no amount is pre-filled).
    - **Payroll & signatories**: names, positions, auto-generation day.
    - **Login page photo**: upload an approved photo of the Municipal Hall or a program activity.
+   - **Search applications**: set the form title, closing date, extra questions, the bidbook form link and the bidbook deadline; tick **Accept applications** when ready.
 3. **Data Import & Migration → Preview migration**, check the list, then **Run migration**.
 4. Encode or import past payments under **Historical Records** before the first payroll, so nothing already paid is paid again.
 5. Ask staff and students to register; approve them under **Registrations**.

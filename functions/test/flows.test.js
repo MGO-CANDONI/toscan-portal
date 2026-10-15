@@ -268,6 +268,24 @@ test("full program lifecycle", async t => {
     await rejects(call("updateMyProfile", "maria", { photoPath: "photos/u_other/x.jpg" }), /Invalid photo/);
   });
 
+  await t.test("Latin honor allowance is paid at the rate of the student's honor level", async () => {
+    const latin = get("allowanceTypes/LATIN");
+    await rejects(call("saveMasterData", "admin", { kind: "allowanceType", id: "REG", data: { ...get("allowanceTypes/REG"), rates: [...get("allowanceTypes/REG").rates, { level: "Cum Laude", amount: 1, effectiveFrom: "2030-01-01" }] } }), /Only a Latin honor/);
+    await call("saveMasterData", "admin", { kind: "allowanceType", id: "LATIN", data: { ...latin, rates: [
+      { level: "Summa Cum Laude", amount: 15000, effectiveFrom: "2024-01-01" },
+      { level: "Magna Cum Laude", amount: 10000, effectiveFrom: "2024-01-01" },
+      { level: "Cum Laude", amount: 7000, effectiveFrom: "2024-01-01" }] } });
+    await rejects(call("saveMasterData", "admin", { kind: "allowanceType", id: "LATIN", data: { ...get("allowanceTypes/LATIN"), appliesTo: "all" } }), /can't be changed/);
+    store.set("students/TO2-201001", { ...get("students/TO2-201001"), latinHonor: "Magna Cum Laude" });
+    store.set(`eligibility/TO2-201001_${AY}_P2`, { studentId: "TO2-201001", academicYear: AY, period: "P2", status: "For Review", docsComplete: true, terms: [{ term: "T2", state: "complete" }] });
+    for (const code of ["SCHOOL_ID", "ENROLLMENT", "GRADES"]) store.set(`submissions/p2${code}`, { studentId: "TO2-201001", requirementCode: code, academicYear: AY, term: "T2", status: "Approved", version: 1 });
+    await call("decideEligibility", "staff", { studentId: "TO2-201001", academicYear: AY, period: "P2", decision: "Qualified", allowanceTypes: ["LATIN"] });
+    const ent = get(`allowances/TO2-201001_${AY}_P2_LATIN`);
+    assert.equal(ent.amount, 10000);
+    assert.equal(ent.honorLevel, "Magna Cum Laude");
+    assert.equal(ent.typeName, "Latin Honor Allowance — Magna Cum Laude");
+  });
+
   await t.test("ending the program blocks new periods but keeps history", async () => {
     await rejects(call("setProgramStatus", "admin", { studentId: "TO2-201001", status: "Ended", effectiveDate: "2027-01-10" }), /reason/);
     await call("setProgramStatus", "admin", { studentId: "TO2-201001", status: "Ended", effectiveDate: "2027-01-10", reason: "Graduated", remarks: "BSED 2027" });
@@ -291,9 +309,58 @@ test("full program lifecycle", async t => {
     assert.ok(r1.digests >= 1);
   });
 
+  await t.test("search applications: apply without signing in, finalist uploads bidbook", async () => {
+    const form = { lastName: "Santos", firstName: "Ana", middleName: "N/A", school: "Candoni National High School", contact: "09171234567", email: "ana@gmail.com", consent: true };
+    await rejects(call("submitApplication", null, form), /not being accepted/);
+    await rejects(call("saveMasterData", "staff", { kind: "applicationForm", data: { title: "X" } }), /not allowed|authorized/);
+    await rejects(call("saveMasterData", "admin", { kind: "applicationForm", data: { title: "T", questions: [{ id: "q_gwa", label: "GWA", type: "select", options: ["A"] }] } }), /two choices/);
+    await call("saveMasterData", "admin", { kind: "applicationForm", data: { open: true, title: "TOSCAN APPLICATION 2099", closesOn: "2099-12-31", bidbookDeadline: "2099-12-31", questions: [{ id: "q_gwa", label: "Grade 9 general average", type: "number", required: true }] } });
+    await rejects(call("submitApplication", null, { ...form, answers: {} }), /Grade 9 general average is required/);
+    await rejects(call("submitApplication", null, { ...form, consent: false, answers: { q_gwa: "95" } }), /confirm/);
+    const r = await call("submitApplication", null, { ...form, answers: { q_gwa: "95.4" } });
+    assert.match(r.ref, /^TS2099-0001$/);
+    assert.match(r.code, /^[A-Z2-9]{5}-[A-Z2-9]{5}$/);
+    const doc = get(`searchApplications/${r.ref}`);
+    assert.equal(doc.status, "Submitted"); assert.equal(doc.answers.q_gwa, "95.4"); assert.equal(doc.codeHash.length, 64);
+    assert.equal(JSON.stringify(doc).includes(r.code), false); // the code itself is never stored
+    await rejects(call("submitApplication", null, { ...form, email: "ANA@gmail.com ", answers: { q_gwa: "90" } }), /already received/);
+
+    const st = await call("applicationStatus", null, { ref: r.ref, code: r.code.toLowerCase().replace("-", "") });
+    assert.equal(st.status, "Submitted"); assert.equal(st.bidbookOpen, false);
+    for (let i = 0; i < 8; i++) await rejects(call("applicationStatus", null, { ref: r.ref, code: "WRONG-CODE" + i }), /not correct/);
+    await rejects(call("applicationStatus", null, { ref: r.ref, code: r.code }), /Too many/);
+    store.set(`searchApplications/${r.ref}`, { ...get(`searchApplications/${r.ref}`), lockedUntil: null });
+
+    // not a finalist yet: no bidbook
+    const anon = { uid: "anon_1", token: { firebase: { sign_in_provider: "anonymous" } } };
+    const path = `searchApplications/${r.ref}/anon_1/bidbook.pdf`;
+    files.set(path, { size: 2_000_000, contentType: "application/pdf" });
+    await assert.rejects(fx.submitBidbook.run({ auth: anon, data: { ref: r.ref, code: r.code, path } }), /only from Top 20 finalists/);
+
+    await rejects(call("reviewApplication", "staff", { ref: r.ref, action: "status", status: "Top 20 Finalist" }), /not authorized/);
+    await rejects(call("reviewApplication", "admin", { ref: r.ref, action: "status", status: "Top 10 Awardee" }), /can't be changed/);
+    await call("reviewApplication", "admin", { ref: r.ref, action: "status", status: "Top 20 Finalist", message: "Bring the original copy on interview day." });
+    assert.equal((await call("applicationStatus", null, { ref: r.ref, code: r.code })).bidbookOpen, true);
+
+    await assert.rejects(fx.submitBidbook.run({ auth: anon, data: { ref: r.ref, code: r.code, path: `searchApplications/${r.ref}/someone_else/bidbook.pdf` } }), /Invalid file/);
+    files.set(`searchApplications/${r.ref}/anon_1/big.pdf`, { size: 30 * 1024 * 1024, contentType: "application/pdf" });
+    await assert.rejects(fx.submitBidbook.run({ auth: anon, data: { ref: r.ref, code: r.code, path: `searchApplications/${r.ref}/anon_1/big.pdf` } }), /larger than 25 MB/);
+    const after = await fx.submitBidbook.run({ auth: anon, data: { ref: r.ref, code: r.code, path, fileName: "Santos bidbook.pdf" } });
+    assert.equal(after.status, "Bidbook Submitted");
+    assert.equal(get(`searchApplications/${r.ref}`).bidbookHistory.length, 1);
+
+    await rejects(call("reviewApplication", "admin", { ref: r.ref, action: "status", status: "Not Selected" }), /remarks/);
+    await call("reviewApplication", "admin", { ref: r.ref, action: "status", status: "Top 10 Awardee", remarks: "Final deliberation" });
+    const reset = await call("reviewApplication", "admin", { ref: r.ref, action: "resetCode" });
+    await rejects(call("applicationStatus", null, { ref: r.ref, code: r.code }), /not correct/);
+    assert.equal((await call("applicationStatus", null, { ref: r.ref, code: reset.code })).status, "Top 10 Awardee");
+    // an anonymous sign-in can't register a portal account
+    await assert.rejects(fx.register.run({ auth: anon, data: {} }), /no email/);
+  });
+
   await t.test("every privileged action left an audit entry", async () => {
     const actions = new Set(all("auditLogs").map(l => l.action));
-    for (const a of ["admin.bootstrap", "user.approve", "document.approve", "document.return", "document.supersessionOpened", "eligibility.decide", "payroll.generate", "payroll.approve", "payroll.release", "payroll.void", "import.historical", "student.programStatus", "deadline.extension", "migration.legacy"]) {
+    for (const a of ["admin.bootstrap", "user.approve", "document.approve", "document.return", "document.supersessionOpened", "eligibility.decide", "payroll.generate", "payroll.approve", "payroll.release", "payroll.void", "import.historical", "student.programStatus", "deadline.extension", "migration.legacy", "application.submit", "application.bidbook", "application.status", "application.resetCode"]) {
       assert.ok(actions.has(a), `missing audit for ${a}`);
     }
   });

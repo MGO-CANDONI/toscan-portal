@@ -11,16 +11,30 @@ import * as Reports from "./views/reports.js";
 import * as Imports from "./views/imports.js";
 import * as Admin from "./views/admin.js";
 import * as Common from "./views/common.js";
+import * as Apply from "./views/apply.js";
+import * as Applications from "./views/applications.js";
 
-let screen = "", current = null, dirty = false, claimsStamp = null, renderTimer = null;
+let screen = "", current = null, dirty = false, claimsStamp = null, renderTimer = null, anonActive = false;
+
+/* Pages anyone can open without signing in. */
+const PUBLIC = { apply: Apply.applyPage, track: Apply.trackPage };
+const publicPage = () => PUBLIC[(location.hash.replace(/^#\/?/, "") || "").split("/")[0]];
+function renderSignedOut() {
+  const page = publicPage();
+  if (page) { screen = "public"; page($("#app")); window.scrollTo(0, 0); }
+  else { screen = "login"; Auth.renderLogin($("#app")); }
+}
 
 getRedirectResult(auth).catch(e => setTimeout(() => toast(authError(e), "err"), 400));
 
 onAuthStateChanged(auth, async user => {
+  // A short anonymous sign-in is used only to upload a bidbook from a public page: leave that page alone.
+  if (user?.isAnonymous) { anonActive = true; if (!screen) signOut(auth); return; }
+  if (!user && anonActive) { anonActive = false; if (screen) return; }
   stop(); closeModals();
   Object.assign(S, { user, claims: {}, account: undefined, student: null, settings: null, d: {}, notifications: [] });
   S.ready.clear(); claimsStamp = null; screen = "";
-  if (!user) { screen = "login"; Auth.renderLogin($("#app")); return; }
+  if (!user) { renderSignedOut(); return; }
   $("#app").innerHTML = `<div class="center-screen"><div class="loading">Loading your account…</div></div>`;
   startCommon(user.uid);
 });
@@ -85,6 +99,7 @@ function navGroups() {
   const groups = [
     { items: [["home", "Overview"], ["notifications", "Notifications", counts.unread]] },
     { label: "Students", items: [["students", "Student Directory"], can("reviewDocuments") && ["review", "Document Review", counts.queue], can("verifyRecords") && ["verify", "Verifications", counts.verify], can("decideEligibility") && ["eligibility", "Eligibility", counts.decide]] },
+    { label: "TOSCAN Search", items: [can("reviewApplications") && ["applications", "Applications", counts.applications]] },
     { label: "Allowance", items: [(can("preparePayroll") || can("approvePayroll") || can("releasePayroll")) && ["payroll", "Payroll"], can("encodeHistory") && ["history", "Historical Records"], can("viewReports") && ["reports", "Reports"]] }
   ];
   if (isAdmin()) groups.push({ label: "Administration", items: [["approvals", "Registrations", counts.pending], ["users", "Users & Permissions"], ["settings", "Settings & Master Data"], ["migration", "Data Import & Migration"], ["audit", "Audit Trail"]] });
@@ -103,7 +118,8 @@ const ROUTES = {
   payroll: () => isStaff() && Payroll.list, payrollDetail: () => isStaff() && Payroll.detail,
   history: () => can("encodeHistory") && Imports.historical, reports: () => can("viewReports") && Reports.reports,
   approvals: () => isAdmin() && Admin.approvals, users: () => isAdmin() && Admin.users, settings: () => isAdmin() && Admin.settings,
-  migration: () => isAdmin() && Imports.migration, audit: () => isAdmin() && Admin.audit
+  migration: () => isAdmin() && Imports.migration, audit: () => isAdmin() && Admin.audit,
+  applications: () => can("reviewApplications") && Applications.list
 };
 
 function parseHash() {
@@ -135,7 +151,10 @@ function renderShell() {
   route();
 }
 
-window.addEventListener("hashchange", () => { if (screen === "shell") route(); });
+window.addEventListener("hashchange", () => {
+  if (screen === "shell") route();
+  else if (screen === "login" || screen === "public") renderSignedOut();
+});
 window.addEventListener("beforeunload", e => { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
 
 function markClean() { dirty = false; $("#refresh-bar")?.remove(); }

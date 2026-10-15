@@ -13,7 +13,8 @@ export const PERMISSION_NAMES = {
   reviewDocuments: "Review documents", verifyRecords: "Verify enrollment and profile changes",
   decideEligibility: "Decide allowance eligibility", preparePayroll: "Prepare and review payroll",
   approvePayroll: "Approve / finalize payroll", releasePayroll: "Record payroll release",
-  encodeHistory: "Encode historical records", viewReports: "View reports"
+  encodeHistory: "Encode historical records", viewReports: "View reports",
+  reviewApplications: "Review TOSCAN search applications"
 };
 export const LATIN = ["", "Summa Cum Laude", "Magna Cum Laude", "Cum Laude"];
 

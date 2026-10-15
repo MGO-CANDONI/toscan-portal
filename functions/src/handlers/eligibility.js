@@ -5,7 +5,7 @@ import { onCall } from "firebase-functions/v2/https";
 import { db, now, actor, audit, notify, bad, notFound, conflict, str, getSettings } from "../fb.js";
 import {
   ELIG, ENT, PERIODS, PERIOD_NAMES, periodForTerm, termsForPeriod, termDocState, deriveEligibility,
-  eligibilityId, entitlementId, academicRecordId, resolveOpeningDate, typeActiveOn, rateOn,
+  eligibilityId, entitlementId, academicRecordId, resolveOpeningDate, typeActiveOn, rateOn, LATIN_LEVELS,
   validateTypeCombination, programActiveOn
 } from "../core/policy.js";
 import { fullName } from "../core/records.js";
@@ -111,7 +111,8 @@ export const decideEligibility = onCall(async request => {
         if (!typeActiveOn(t, refDate)) conflict(`${t.name} is not active on ${refDate}.`);
         if (t.classifications?.length && !t.classifications.includes(s.classification)) conflict(`${t.name} does not apply to this classification.`);
         if (t.appliesTo === "latinHonor" && !s.latinHonor) conflict(`${t.name} requires a verified Latin honor on the student's record.`);
-        if (!rateOn(t, refDate)) conflict(`${t.name} has no rate in force on ${refDate}. Set it in Settings → Allowance types.`);
+        if (t.appliesTo === "latinHonor" && !LATIN_LEVELS.includes(s.latinHonor)) conflict(`${t.name}: the student's Latin honor must be Summa Cum Laude, Magna Cum Laude or Cum Laude.`);
+        if (!rateOn(t, refDate, s.latinHonor)) conflict(`${t.name}${t.appliesTo === "latinHonor" ? ` (${s.latinHonor})` : ""} has no rate in force on ${refDate}. Set it in Settings → Allowance types.`);
       }
       const combo = validateTypeCombination(types); if (combo) conflict(combo);
       for (const t of types) if (t.maxPeriods) {
@@ -122,11 +123,12 @@ export const decideEligibility = onCall(async request => {
       // Writes
       for (const d of periodEnts.docs) if (d.data().status === ENT.AWAITING && !codes.includes(d.data().typeCode)) tx.update(d.ref, { status: ENT.CANCELLED, cancelledAt: now(), cancelReason: "Allowance types changed" });
       types.forEach((t, i) => {
-        const rate = rateOn(t, refDate);
+        const latin = t.appliesTo === "latinHonor";
+        const rate = rateOn(t, refDate, s.latinHonor);
         const existing = entSnaps[i].exists ? entSnaps[i].data() : null;
         if (existing && existing.status === ENT.AWAITING) return; // already queued
         const value = {
-          studentId, uid: s.uid || null, studentName: fullName(s), academicYear, period, typeCode: t.code, typeName: t.name,
+          studentId, uid: s.uid || null, studentName: fullName(s), academicYear, period, typeCode: t.code, typeName: latin ? `${t.name} — ${s.latinHonor}` : t.name, ...(latin ? { honorLevel: s.latinHonor } : {}),
           amount: Number(rate.amount), rateEffectiveFrom: rate.effectiveFrom, referenceDate: refDate,
           classification: s.classification, batch: s.qualification?.batch || s.batch || "",
           status: ENT.AWAITING, payrollId: null, payrollNo: null, releasedAt: null, paymentRef: null,

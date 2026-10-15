@@ -10,7 +10,7 @@ export const PERIOD_NAMES = { P1: "First Allowance", P2: "Second Allowance" };
 export const ROLES = ["student", "staff", "admin"];
 export const PERMISSIONS = [
   "reviewDocuments", "verifyRecords", "decideEligibility", "preparePayroll",
-  "approvePayroll", "releasePayroll", "encodeHistory", "viewReports"
+  "approvePayroll", "releasePayroll", "encodeHistory", "viewReports", "reviewApplications"
 ];
 export const DEFAULT_STAFF_PERMISSIONS = ["reviewDocuments", "verifyRecords", "decideEligibility", "preparePayroll", "viewReports"];
 
@@ -124,27 +124,42 @@ export function typeActiveOn(type, ymd) {
   return true;
 }
 
-/** The rate in force on a date. Rates: [{amount, effectiveFrom, effectiveTo?}] */
-export function rateOn(type, ymd) {
-  const rates = [...(type?.rates || [])].sort((a, b) => compareYMD(b.effectiveFrom, a.effectiveFrom));
+/** Latin honor levels; a Latin-honor allowance type carries a separate dated rate for each. */
+export const LATIN_LEVELS = ["Summa Cum Laude", "Magna Cum Laude", "Cum Laude"];
+
+/**
+ * The rate in force on a date. Rates: [{amount, effectiveFrom, effectiveTo?, level?}]
+ * For a Latin-honor type pass the student's level; each level has its own rates.
+ */
+export function rateOn(type, ymd, level = "") {
+  let pool = type?.rates || [];
+  if (type?.appliesTo === "latinHonor" && pool.some(r => r.level)) pool = pool.filter(r => r.level === level);
+  const rates = [...pool].sort((a, b) => compareYMD(b.effectiveFrom, a.effectiveFrom));
   for (const r of rates) {
     if (compareYMD(r.effectiveFrom, ymd) <= 0 && (!r.effectiveTo || compareYMD(ymd, r.effectiveTo) <= 0)) return r;
   }
   return null;
 }
 
-export function validateRates(rates) {
+const rateKey = r => `${r.level || ""}|${r.effectiveFrom}`;
+const levelLabel = r => (r.level ? ` (${r.level})` : "");
+
+export function validateRates(rates, { levels = false } = {}) {
   if (!Array.isArray(rates)) return "Rates must be a list.";
   for (const r of rates) {
     if (!isValidYMD(r.effectiveFrom)) return "Every rate needs a valid effective date.";
     if (r.effectiveTo && !isValidYMD(r.effectiveTo)) return "Invalid rate end date.";
     if (r.effectiveTo && compareYMD(r.effectiveTo, r.effectiveFrom) < 0) return "A rate ends before it starts.";
     if (!(Number(r.amount) >= 0) || Math.round(Number(r.amount) * 100) !== Number(r.amount) * 100) return "Rate amounts must be pesos with at most 2 decimals.";
+    if (r.level && !levels) return "Only a Latin honor allowance can have rates per honor level.";
+    if (levels && !LATIN_LEVELS.includes(r.level)) return "Each Latin honor rate must be for Summa Cum Laude, Magna Cum Laude or Cum Laude.";
   }
-  const sorted = [...rates].sort((a, b) => compareYMD(a.effectiveFrom, b.effectiveFrom));
-  for (let i = 1; i < sorted.length; i++) {
-    const prev = sorted[i - 1];
-    if (!prev.effectiveTo || compareYMD(prev.effectiveTo, sorted[i].effectiveFrom) >= 0) return `Rates overlap: ${prev.effectiveFrom} and ${sorted[i].effectiveFrom}. End the earlier rate the day before the next one starts.`;
+  for (const level of new Set(rates.map(r => r.level || ""))) {
+    const sorted = rates.filter(r => (r.level || "") === level).sort((a, b) => compareYMD(a.effectiveFrom, b.effectiveFrom));
+    for (let i = 1; i < sorted.length; i++) {
+      const prev = sorted[i - 1];
+      if (!prev.effectiveTo || compareYMD(prev.effectiveTo, sorted[i].effectiveFrom) >= 0) return `Rates overlap${levelLabel(prev)}: ${prev.effectiveFrom} and ${sorted[i].effectiveFrom}. End the earlier rate the day before the next one starts.`;
+    }
   }
   return null;
 }
@@ -152,10 +167,10 @@ export function validateRates(rates) {
 /** Existing rates may only be ended (effectiveTo set once); amounts and start dates never change and rates are never removed. */
 export function rateHistoryPreserved(oldRates = [], newRates = []) {
   for (const o of oldRates) {
-    const n = newRates.find(r => r.effectiveFrom === o.effectiveFrom);
-    if (!n) return `The rate effective ${o.effectiveFrom} can't be removed. End it instead.`;
-    if (Number(n.amount) !== Number(o.amount)) return `The amount of the rate effective ${o.effectiveFrom} can't be changed. Add a new rate with a later effective date.`;
-    if (o.effectiveTo && n.effectiveTo !== o.effectiveTo) return `The end date of the rate effective ${o.effectiveFrom} is already set.`;
+    const n = newRates.find(r => rateKey(r) === rateKey(o));
+    if (!n) return `The rate${levelLabel(o)} effective ${o.effectiveFrom} can't be removed. End it instead.`;
+    if (Number(n.amount) !== Number(o.amount)) return `The amount of the rate${levelLabel(o)} effective ${o.effectiveFrom} can't be changed. Add a new rate with a later effective date.`;
+    if (o.effectiveTo && n.effectiveTo !== o.effectiveTo) return `The end date of the rate${levelLabel(o)} effective ${o.effectiveFrom} is already set.`;
   }
   return null;
 }

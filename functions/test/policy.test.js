@@ -156,3 +156,21 @@ test("payroll workflow guards", () => {
   assert.match(checkPayrollAction(p(PAYROLL.RELEASED), "void", admin, { reason: "x" }), /can't be changed/);
   assert.match(checkPayrollAction(p(PAYROLL.GENERATED), "release", admin, { paymentDate: "2026-10-10", paymentRef: "x" }), /can't be changed/);
 });
+
+test("Latin honor rates per level", () => {
+  const t = { appliesTo: "latinHonor", rates: [
+    { level: "Summa Cum Laude", amount: 15000, effectiveFrom: "2024-01-01" },
+    { level: "Magna Cum Laude", amount: 10000, effectiveFrom: "2024-01-01", effectiveTo: "2025-12-31" },
+    { level: "Magna Cum Laude", amount: 12000, effectiveFrom: "2026-01-01" },
+    { level: "Cum Laude", amount: 8000, effectiveFrom: "2024-01-01" }] };
+  assert.equal(rateOn(t, "2026-08-01", "Summa Cum Laude").amount, 15000);
+  assert.equal(rateOn(t, "2025-08-01", "Magna Cum Laude").amount, 10000);
+  assert.equal(rateOn(t, "2026-08-01", "Magna Cum Laude").amount, 12000);
+  assert.equal(rateOn(t, "2026-08-01", "Cum Laude").amount, 8000);
+  assert.equal(rateOn(t, "2026-08-01", ""), null);
+  assert.equal(validateRates(t.rates, { levels: true }), null); // same dates in different levels don't overlap
+  assert.match(validateRates([{ level: "Cum Laude", amount: 1, effectiveFrom: "2024-01-01" }, { level: "Cum Laude", amount: 2, effectiveFrom: "2025-01-01" }], { levels: true }), /overlap \(Cum Laude\)/);
+  assert.match(validateRates([{ level: "Summa", amount: 1, effectiveFrom: "2024-01-01" }], { levels: true }), /Summa Cum Laude/);
+  assert.match(validateRates([{ level: "Cum Laude", amount: 1, effectiveFrom: "2024-01-01" }]), /Only a Latin honor/);
+  assert.match(rateHistoryPreserved(t.rates, t.rates.filter(r => r.level !== "Cum Laude")), /\(Cum Laude\).*can't be removed/);
+});

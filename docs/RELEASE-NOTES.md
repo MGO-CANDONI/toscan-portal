@@ -59,6 +59,13 @@ Delivered as one release covering phases 1–7 of the enhancement requirements.
 | Browser end-to-end run of all screens against the real functions on a simulated Firebase (admin, two staff, student; desktop and phone) | Pass, no console errors |
 | Security rules on the Firebase emulators (`tests/`) | **Written but not yet run.** The emulator could not be downloaded in the development environment. Run it before go-live (DEPLOYMENT.md §8). |
 
+## Update — October 15, 2026
+
+- **TOSCAN search applications.** The sign-in page shows the current search. Grade 10 students apply without an account (Last Name, First Name, Middle Name, School, Contact Number, E-mail Address, plus any questions the administrator adds) and receive a reference number and a one-time access code. Staff with the new *Review TOSCAN search applications* permission screen applications under **TOSCAN Search → Applications**, mark **Top 20 finalists**, and record results (Top 10 Awardee / Top 20 Qualifier / Not Selected). Finalists use the reference number and access code to download the bidbook form and upload the signed bidbook as one PDF (up to 25 MB) before the deadline. Every step is audited; codes are stored only as hashes; repeated wrong codes lock the lookup for 15 minutes.
+- **Latin Honor levels.** The Latin Honor allowance has a separate dated rate for Summa Cum Laude, Magna Cum Laude and Cum Laude. The amount follows the level on the student's record; the payroll line shows the level.
+- **Design.** New summary tiles; the Reports menu no longer overlaps; settings tabs wrap; buttons that are links no longer show underlines.
+- **Security rules.** Anonymous sign-ins count as signed out for portal data. New: `searchApplications` (staff read only), `publicConfig` (public read), bidbook uploads limited to the uploader's own folder, PDF only, no overwrite or delete.
+
 ## Outstanding items
 
 1. Run the security-rules tests and a pilot with real accounts on the deployed project before announcing the portal.

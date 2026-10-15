@@ -14,6 +14,7 @@ const staff = () => u("staff", { role: "staff" });
 const admin = () => u("admin", { role: "admin" });
 const pending = () => u("newbie");
 const anon = () => env.unauthenticatedContext();
+const anonSignIn = (uid = "anon1") => env.authenticatedContext(uid, { firebase: { sign_in_provider: "anonymous" } });
 const pdf = new Uint8Array([37, 80, 68, 70]);
 
 before(async () => {
@@ -37,6 +38,8 @@ before(async () => {
     await setDoc(doc(d, "notifications/n1"), { uid: "maria", read: false, title: "Hi" });
     await setDoc(doc(d, "notifications/n2"), { uid: "ben", read: false, title: "Hi" });
     await setDoc(doc(d, "archivedStudents/old"), { surname: "OLD" });
+    await setDoc(doc(d, "searchApplications/TS2027-0001"), { lastName: "SANTOS", status: "Submitted" });
+    await setDoc(doc(d, "publicConfig/application"), { open: true, title: "TOSCAN 2027" });
     const s = c.storage();
     await uploadBytes(ref(s, "documents/S1/abcdefghij12/id.pdf"), pdf, { contentType: "application/pdf" });
   });
@@ -119,4 +122,25 @@ test("photos", async () => {
   await assertFails(uploadBytes(ref(pending().storage(), "photos/newbie/me.jpg"), pdf, { contentType: "image/jpeg" }));
   await assertFails(getBytes(ref(ben().storage(), "photos/maria/me.jpg")));
   await assertSucceeds(getBytes(ref(staff().storage(), "photos/maria/me.jpg")));
+});
+
+test("search applications: public form settings, private applications, finalist bidbook uploads", async () => {
+  await assertSucceeds(getDoc(doc(anon().firestore(), "publicConfig/application")));
+  await assertFails(setDoc(doc(admin().firestore(), "publicConfig/application"), { open: false }));
+  await assertFails(getDoc(doc(anon().firestore(), "searchApplications/TS2027-0001")));
+  await assertFails(getDoc(doc(anonSignIn().firestore(), "searchApplications/TS2027-0001")));
+  await assertFails(getDoc(doc(maria().firestore(), "searchApplications/TS2027-0001")));
+  await assertSucceeds(getDoc(doc(staff().firestore(), "searchApplications/TS2027-0001")));
+  await assertFails(setDoc(doc(anonSignIn().firestore(), "searchApplications/TS2027-9999"), { status: "Top 10 Awardee" }));
+  // anonymous sign-ins are not "signed in" for portal data
+  await assertFails(getDoc(doc(anonSignIn().firestore(), "settings/app")));
+  const s = anonSignIn("anon1").storage();
+  await assertSucceeds(uploadBytes(ref(s, "searchApplications/TS2027-0001/anon1/bidbook.pdf"), pdf, { contentType: "application/pdf" }));
+  await assertFails(uploadBytes(ref(s, "searchApplications/TS2027-0001/anon1/bidbook.pdf"), pdf, { contentType: "application/pdf" })); // no overwrite
+  await assertFails(uploadBytes(ref(s, "searchApplications/TS2027-0001/anon2/bidbook.pdf"), pdf, { contentType: "application/pdf" })); // someone else's folder
+  await assertFails(uploadBytes(ref(s, "searchApplications/TS2027-0001/anon1/b.docx"), pdf, { contentType: "application/msword" }));
+  await assertFails(uploadBytes(ref(anon().storage(), "searchApplications/TS2027-0001/x/b.pdf"), pdf, { contentType: "application/pdf" }));
+  await assertFails(getBytes(ref(s, "searchApplications/TS2027-0001/anon1/bidbook.pdf")));
+  await assertSucceeds(getBytes(ref(staff().storage(), "searchApplications/TS2027-0001/anon1/bidbook.pdf")));
+  await assertFails(deleteObject(ref(admin().storage(), "searchApplications/TS2027-0001/anon1/bidbook.pdf")));
 });

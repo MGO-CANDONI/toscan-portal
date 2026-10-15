@@ -17,7 +17,8 @@ export function counts() {
     queue: (S.d.queue || []).length,
     verify: (S.d.verify || []).length + (S.d.students || []).filter(s => s.pendingChanges && Object.keys(s.pendingChanges).length).length,
     decide: (S.d.eligibility || []).filter(e => e.status === "For Review" && e.docsComplete).length,
-    pending: (S.d.users || []).filter(u => u.status === "pending").length
+    pending: (S.d.users || []).filter(u => u.status === "pending").length,
+    applications: (S.d.applications || []).filter(a => ["Submitted", "Bidbook Submitted"].includes(a.status)).length
   };
 }
 

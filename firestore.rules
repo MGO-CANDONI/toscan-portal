@@ -11,7 +11,8 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function signedIn() { return request.auth != null; }
+    // Anonymous sign-ins (used only to upload a bidbook from the public page) count as signed out.
+    function signedIn() { return request.auth != null && request.auth.token.get('firebase', {}).get('sign_in_provider', '') != 'anonymous'; }
     function role() { return signedIn() ? request.auth.token.get('role', '') : ''; }
     function isAdmin() { return role() == 'admin'; }
     function isStaff() { return role() in ['staff', 'admin']; }
@@ -37,6 +38,11 @@ service cloud.firestore {
     match /historicalPayments/{id}     { allow read: if isStaff() || ownsRecord(); }
     match /programStatusHistory/{id}   { allow read: if isStaff() || ownsRecord(); }
     match /deadlineExtensions/{id}     { allow read: if isStaff() || ownsRecord(); }
+
+    // TOSCAN search applications (written only by the server)
+    match /searchApplications/{id} { allow read: if isStaff(); }
+    // Public form settings for the sign-in page (no personal data)
+    match /publicConfig/{id} { allow read: if true; }
 
     // Staff-only records
     match /payrolls/{id} { allow read: if isStaff(); }

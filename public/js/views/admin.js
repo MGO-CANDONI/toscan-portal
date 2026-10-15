@@ -6,6 +6,8 @@ import {
   ROLE_NAMES, PERMISSION_NAMES, fullName, renderTable, confirmBox, openModal, fieldHtml, datalist
 } from "../ui.js";
 import { clean } from "./common.js";
+import { LATIN_LEVELS } from "../core/policy.js";
+import { formSettings as applicationForm } from "./applications.js";
 
 /* ---------------- Registrations ---------------- */
 export function approvals(main) {
@@ -108,11 +110,13 @@ let stab = "general";
 const save = (kind, id, data, btn, msg = "Saved.") => busy(btn, async () => { await call("saveMasterData", { kind, id, data }); clean(); }, msg);
 
 export function settingsView(main) {
-  const tabs = [["general", "General & policies"], ["years", "Academic years"], ["schools", "Schools"], ["requirements", "Document requirements"], ["allowances", "Allowance types & rates"], ["lists", "Lists"], ["payroll", "Payroll & signatories"]];
+  const tabs = [["general", "General & policies"], ["years", "Academic years"], ["schools", "Schools"], ["requirements", "Document requirements"], ["allowances", "Allowance types & rates"], ["lists", "Lists"], ["payroll", "Payroll & signatories"], ["application", "Search applications"]];
+  try { const want = sessionStorage.getItem("toscan.stab"); if (want) { stab = want; sessionStorage.removeItem("toscan.stab"); } } catch { /* ignore */ }
   main.innerHTML = `<div class="page-head"><div><h1>Settings &amp; Master Data</h1><p>Every change is recorded in the audit trail.</p></div></div>
     <div class="tabs">${tabs.map(([k, l]) => `<button data-st="${k}" class="${stab === k ? "active" : ""}">${esc(l)}</button>`).join("")}</div><div id="sbody"></div>`;
   $$("[data-st]", main).forEach(b => b.onclick = () => { stab = b.dataset.st; clean(); settingsView(main); });
-  ({ general, years, schools, requirements, allowances, lists, payroll })[stab]($("#sbody", main));
+  const application = el => applicationForm(el, save);
+  ({ general, years, schools, requirements, allowances, lists, payroll, application })[stab]($("#sbody", main));
 }
 export { settingsView as settings };
 settingsView.deps = ["settings", "academicYears", "schools", "requirements", "allowanceTypes"];
@@ -222,19 +226,26 @@ function requirements(el) {
 
 function allowances(el) {
   const list = S.master.allowanceTypes;
-  const rateNow = t => { const today = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10); return (t.rates || []).find(r => r.effectiveFrom <= today && (!r.effectiveTo || today <= r.effectiveTo)); };
+  const today = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
+  const rateNow = (t, level = "") => (t.rates || []).find(r => (r.level || "") === level && r.effectiveFrom <= today && (!r.effectiveTo || today <= r.effectiveTo));
+  const rateCell = t => {
+    if (t.appliesTo !== "latinHonor") { const r = rateNow(t); return r ? `${money(r.amount)}<div class="xs muted">since ${fmtDate(r.effectiveFrom)}</div>` : `<span class="badge b-bad">No rate</span>`; }
+    return LATIN_LEVELS.map(l => { const r = rateNow(t, l); return `<div class="nowrap"><span class="xs muted">${esc(l)}</span> ${r ? `<b>${money(r.amount)}</b>` : `<span class="badge b-bad">No rate</span>`}</div>`; }).join("");
+  };
   el.innerHTML = `<div class="card"><div class="card-head"><h3>Allowance types</h3><button class="btn primary" id="add">Add allowance type</button></div>
     <div class="table-wrap"><table><thead><tr><th>Code</th><th>Name</th><th>Applies to</th><th class="right">Current rate</th><th>Max periods</th><th>Combinable with</th><th>Status</th><th></th></tr></thead><tbody>
-    ${list.map(t => { const r = rateNow(t); return `<tr><td class="mono">${esc(t.code)}</td><td><b>${esc(t.name)}</b><div class="xs muted">${esc(t.eligibility)}</div></td><td class="small">${t.appliesTo === "latinHonor" ? "Students with a Latin honor" : "All qualified students"}<br>${(t.classifications || []).map(c => CLASS_NAMES[c]).join(", ")}</td><td class="right">${r ? `${money(r.amount)}<div class="xs muted">since ${fmtDate(r.effectiveFrom)}</div>` : `<span class="badge b-bad">No rate</span>`}</td><td>${t.maxPeriods || "No limit"}</td><td>${(t.combinableWith || []).join(", ") || "—"}</td><td>${t.active === false ? "<span class='badge'>Inactive</span>" : "<span class='badge b-ok'>Active</span>"}</td><td><button class="btn sm" data-e="${esc(t.code)}">Edit</button></td></tr>`; }).join("")}</tbody></table></div>
+    ${list.map(t => { return `<tr><td class="mono">${esc(t.code)}</td><td><b>${esc(t.name)}</b><div class="xs muted">${esc(t.eligibility)}</div></td><td class="small">${t.appliesTo === "latinHonor" ? "Students with a Latin honor" : "All qualified students"}<br>${(t.classifications || []).map(c => CLASS_NAMES[c]).join(", ")}</td><td class="right">${rateCell(t)}</td><td>${t.maxPeriods || "No limit"}</td><td>${(t.combinableWith || []).join(", ") || "—"}</td><td>${t.active === false ? "<span class='badge'>Inactive</span>" : "<span class='badge b-ok'>Active</span>"}</td><td><button class="btn sm" data-e="${esc(t.code)}">Edit</button></td></tr>`; }).join("")}</tbody></table></div>
     <p class="small muted">Rates are dated. To change an amount, end the current rate and add a new one; amounts already approved or paid never change.</p></div>`;
   const edit = t => {
-    const rates = [...(t?.rates || [])].sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom));
+    const order = l => (l ? LATIN_LEVELS.indexOf(l) : -1);
+    const rates = [...(t?.rates || [])].sort((a, b) => order(a.level) - order(b.level) || a.effectiveFrom.localeCompare(b.effectiveFrom));
+    const locked = !!(t && (t.rates || []).length);
     const m = openModal(`<h2>${t ? esc(t.name) : "Add allowance type"}</h2><form class="grid g2" id="af">
       ${fieldHtml({ name: "code", label: "Code", value: t?.code, placeholder: "e.g. REG", required: true, disabled: !!t })}
       ${fieldHtml({ name: "name", label: "Name", value: t?.name, required: true })}
       ${fieldHtml({ name: "description", label: "Description", type: "textarea", value: t?.description, span: "spanall" })}
       ${fieldHtml({ name: "eligibility", label: "Eligibility criteria", type: "textarea", value: t?.eligibility, span: "spanall" })}
-      ${fieldHtml({ name: "appliesTo", label: "Applies to", type: "select", options: [["all", "All qualified students"], ["latinHonor", "Only students with a verified Latin honor"]], value: t?.appliesTo || "all" })}
+      ${fieldHtml({ name: "appliesTo", label: "Applies to", type: "select", options: [["all", "All qualified students"], ["latinHonor", "Only students with a verified Latin honor"]], value: t?.appliesTo || "all", disabled: locked, hint: locked ? "Fixed once rates exist." : "" })}
       <div><label>Classifications</label><div class="btn-row">${Object.entries(CLASS_NAMES).map(([k, l]) => `<label class="check"><input type="checkbox" name="c_${k}" ${!t || (t.classifications || []).includes(k) ? "checked" : ""}> ${esc(l)}</label>`).join("")}</div></div>
       ${fieldHtml({ name: "maxPeriods", label: "Maximum payable periods (blank = no limit)", type: "number", value: t?.maxPeriods ?? "" })}
       ${fieldHtml({ name: "combinableWith", label: "Can be paid together with (codes, comma-separated)", value: (t?.combinableWith || []).join(", "), hint: "Both types must list each other." })}
@@ -243,18 +254,22 @@ function allowances(el) {
       ${fieldHtml({ name: "active", label: "Active", type: "checkbox", value: t ? t.active !== false : true })}
       ${fieldHtml({ name: "remarks", label: "Remarks", value: t?.remarks })}
       <fieldset class="spanall"><legend>Rates (₱)</legend>
-        <table><thead><tr><th>Effective from</th><th>Effective to</th><th class="right">Amount</th></tr></thead><tbody>
-          ${rates.map((r, i) => `<tr><td>${fmtDate(r.effectiveFrom)}</td><td>${r.effectiveTo ? fmtDate(r.effectiveTo) : `<input type="date" name="end_${i}" title="End this rate">`}</td><td class="right">${money(r.amount)}</td></tr>`).join("")}
-          <tr><td><input type="date" name="newFrom"></td><td><input type="date" name="newTo"></td><td><input type="number" step="0.01" min="0" name="newAmount" placeholder="New rate"></td></tr>
+        <p class="xs muted lvl-only">Latin honor allowances have a separate rate for each honor level.</p>
+        <table><thead><tr><th class="lvl-only">Honor level</th><th>Effective from</th><th>Effective to</th><th class="right">Amount</th></tr></thead><tbody>
+          ${rates.map((r, i) => `<tr><td class="lvl-only">${esc(r.level || "—")}</td><td>${fmtDate(r.effectiveFrom)}</td><td>${r.effectiveTo ? fmtDate(r.effectiveTo) : `<input type="date" name="end_${i}" title="End this rate">`}</td><td class="right">${money(r.amount)}</td></tr>`).join("")}
+          <tr><td class="lvl-only"><select name="newLevel">${LATIN_LEVELS.map(l => `<option>${esc(l)}</option>`).join("")}</select></td><td><input type="date" name="newFrom"></td><td><input type="date" name="newTo"></td><td><input type="number" step="0.01" min="0" name="newAmount" placeholder="New rate"></td></tr>
         </tbody></table><p class="xs muted">Existing rates can only be given an end date. End the current rate the day before a new one starts.</p></fieldset>
       <div class="spanall modal-actions"><button type="button" class="btn" data-c>Cancel</button><button class="btn primary">Save</button></div></form>`, { size: "wide" });
     $("[data-c]", m).onclick = () => m.close();
-    $("#af", m).onsubmit = ev => {
-      ev.preventDefault(); const f = ev.target;
+    const af = $("#af", m);
+    const syncLevels = () => $$(".lvl-only", m).forEach(x => x.classList.toggle("hidden", af.appliesTo.value !== "latinHonor"));
+    af.appliesTo.onchange = syncLevels; syncLevels();
+    af.onsubmit = ev => {
+      ev.preventDefault(); const f = ev.target; const latin = f.appliesTo.value === "latinHonor";
       const newRates = rates.map((r, i) => ({ ...r, ...(f[`end_${i}`]?.value ? { effectiveTo: f[`end_${i}`].value } : {}) }));
       if (f.newFrom.value || f.newAmount.value) {
         if (!f.newFrom.value || f.newAmount.value === "") return toast("A new rate needs an effective date and an amount.", "err");
-        newRates.push({ amount: Number(f.newAmount.value), effectiveFrom: f.newFrom.value, ...(f.newTo.value ? { effectiveTo: f.newTo.value } : {}) });
+        newRates.push({ amount: Number(f.newAmount.value), effectiveFrom: f.newFrom.value, ...(f.newTo.value ? { effectiveTo: f.newTo.value } : {}), ...(latin ? { level: f.newLevel.value } : {}) });
       }
       const code = t?.code || f.code.value.trim().toUpperCase();
       save("allowanceType", code, {

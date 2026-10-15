@@ -8,7 +8,7 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
 
-    function signedIn() { return request.auth != null; }
+    function signedIn() { return request.auth != null && request.auth.token.get('firebase', {}).get('sign_in_provider', '') != 'anonymous'; }
     function role() { return signedIn() ? request.auth.token.get('role', '') : ''; }
     function isAdmin() { return role() == 'admin'; }
     function isStaff() { return role() in ['staff', 'admin']; }
@@ -38,6 +38,18 @@ service firebase.storage {
       allow read: if isStaff();
       allow create: if isStaff() && sizeUnder(25)
         && request.resource.contentType.matches('application/pdf|image/(jpeg|png)|text/csv|application/vnd.openxmlformats-officedocument.spreadsheetml.sheet|application/vnd.ms-excel');
+      allow update, delete: if false;
+    }
+
+    // Bidbooks from TOSCAN search finalists: searchApplications/{ref}/{uid}/{fileName}.
+    // Uploaded with an anonymous sign-in from the public page; the server checks the
+    // reference number, access code and finalist status before accepting the file.
+    match /searchApplications/{appRef}/{uid}/{fileName} {
+      allow read: if isStaff();
+      allow create: if request.auth != null && request.auth.uid == uid
+        && appRef.matches('^TS[0-9]{4}-[0-9]{4,6}$')
+        && fileName.matches('^[A-Za-z0-9_.-]{1,80}$')
+        && sizeUnder(25) && request.resource.contentType == 'application/pdf';
       allow update, delete: if false;
     }
 

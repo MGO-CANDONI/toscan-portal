@@ -5,6 +5,7 @@ import {
   DEFAULT_SETTINGS, TERMS, validateTermPeriodMap, validateRates, rateHistoryPreserved, PERIODS
 } from "../core/policy.js";
 import { isValidAY, isValidYMD, manilaToday } from "../core/dates.js";
+import { cleanApplicationConfig } from "../core/applications.js";
 
 const CODE_RE = /^[A-Z][A-Z0-9_]{1,29}$/;
 const list = (v, max = 200) => (Array.isArray(v) ? v : []).map(x => str(x, 120)).filter(Boolean).slice(0, max);
@@ -41,7 +42,7 @@ export async function seedDefaults() {
     });
     b.set(db.doc("allowanceTypes/LATIN"), {
       code: "LATIN", name: "Latin Honor Allowance", description: "Allowance for students graduating with Latin honors.",
-      eligibility: "Student with a verified Latin honor.",
+      eligibility: "Student with a verified Latin honor. Summa Cum Laude, Magna Cum Laude and Cum Laude each have their own rate.",
       appliesTo: "latinHonor", classifications: ["top10", "top20"], combinableWith: [], maxPeriods: 1,
       effectiveDate: "", endDate: "", active: true, rates: [], remarks: "Set the rate before generating payroll.", createdAt: now()
     });
@@ -138,14 +139,16 @@ function cleanAllowanceType(code, d, old) {
   const name = str(d.name, 120); if (!name) bad("Allowance name is required.");
   if (d.effectiveDate && !isValidYMD(d.effectiveDate)) bad("Invalid effective date.");
   if (d.endDate && !isValidYMD(d.endDate)) bad("Invalid end date.");
-  const rates = (d.rates || []).map(r => ({ amount: Number(r.amount), effectiveFrom: r.effectiveFrom, ...(r.effectiveTo ? { effectiveTo: r.effectiveTo } : {}) }));
-  const e1 = validateRates(rates); if (e1) bad(e1);
+  const latin = d.appliesTo === "latinHonor";
+  const rates = (d.rates || []).map(r => ({ amount: Number(r.amount), effectiveFrom: r.effectiveFrom, ...(r.effectiveTo ? { effectiveTo: r.effectiveTo } : {}), ...(r.level ? { level: str(r.level, 40) } : {}) }));
+  if (old && (old.appliesTo === "latinHonor") !== latin && (old.rates || []).length) bad("\"Applies to\" can't be changed once the type has rates. Add a new allowance type instead.");
+  const e1 = validateRates(rates, { levels: latin }); if (e1) bad(e1);
   const e2 = rateHistoryPreserved(old?.rates || [], rates); if (e2) bad(e2);
   const maxPeriods = d.maxPeriods === "" || d.maxPeriods == null ? null : Number(d.maxPeriods);
   if (maxPeriods !== null && (!Number.isInteger(maxPeriods) || maxPeriods < 1)) bad("Maximum payable periods must be a whole number, or blank for no limit.");
   return {
     code, name, description: str(d.description, 500), eligibility: str(d.eligibility, 500),
-    appliesTo: d.appliesTo === "latinHonor" ? "latinHonor" : "all",
+    appliesTo: latin ? "latinHonor" : "all",
     classifications: (d.classifications || []).filter(c => ["top10", "top20"].includes(c)),
     combinableWith: (d.combinableWith || []).map(c => str(c, 30)).filter(c => CODE_RE.test(c) && c !== code),
     maxPeriods, effectiveDate: d.effectiveDate || "", endDate: d.endDate || "", active: d.active !== false,
@@ -153,7 +156,7 @@ function cleanAllowanceType(code, d, old) {
   };
 }
 
-/** data: { kind: "settings"|"academicYear"|"school"|"requirement"|"allowanceType", id?, data } */
+/** data: { kind: "settings"|"academicYear"|"school"|"requirement"|"allowanceType"|"applicationForm", id?, data } */
 export const saveMasterData = onCall(async request => {
   const a = await actor(request, { roles: ["admin"] });
   const { kind, id, data = {}, reason } = request.data || {};
@@ -172,6 +175,10 @@ export const saveMasterData = onCall(async request => {
     ref = db.doc(`allowanceTypes/${id}`);
     const old = await ref.get();
     value = cleanAllowanceType(id, data, old.exists ? old.data() : null);
+  } else if (kind === "applicationForm") {
+    ref = db.doc("publicConfig/application");
+    const { errors, value: v } = cleanApplicationConfig(data); if (errors.length) bad(errors.join(" "));
+    value = v;
   } else bad("Unknown master data kind.");
 
   const beforeSnap = await ref.get();

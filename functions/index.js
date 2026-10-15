@@ -11,4 +11,5 @@ export { submitDocument, reviewDocument, openSupersession, noteDocument } from "
 export { decideEligibility, recalcEligibility } from "./src/handlers/eligibility.js";
 export { generatePayroll, payrollAction } from "./src/handlers/payroll.js";
 export { importRecords, migrateLegacy } from "./src/handlers/imports.js";
+export { submitApplication, applicationStatus, submitBidbook, reviewApplication } from "./src/handlers/applications.js";
 export { dailyJobs } from "./src/handlers/jobs.js";

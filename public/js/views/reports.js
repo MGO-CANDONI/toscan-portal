@@ -50,8 +50,8 @@ const rerun = () => reports(document.getElementById("main"));
 export function reports(main) {
   main.innerHTML = `
     <div class="page-head"><div><h1>Reports</h1><p>Filter, then export to Excel or CSV, or print / save as PDF.</p></div></div>
-    <div class="split" style="grid-template-columns:240px minmax(0,1fr)">
-      <div class="card" style="padding:.6rem">${[...new Set(REPORTS.map(r => r.group))].map(g => `<div class="xs muted" style="text-transform:uppercase;letter-spacing:.5px;margin:.6rem .4rem .3rem">${esc(g)}</div>${REPORTS.filter(r => r.group === g).map(r => `<button class="btn ghost block" style="justify-content:flex-start;${r.id === current ? "background:var(--gold-soft)" : ""}" data-r="${r.id}">${esc(r.title)}</button>`).join("")}`).join("")}</div>
+    <div class="split rep-split">
+      <div class="card rep-menu" style="padding:.6rem">${[...new Set(REPORTS.map(r => r.group))].map(g => `<div class="xs muted" style="text-transform:uppercase;letter-spacing:.5px;margin:.6rem .4rem .3rem">${esc(g)}</div>${REPORTS.filter(r => r.group === g).map(r => `<button class="btn ghost block" style="justify-content:flex-start;${r.id === current ? "background:var(--gold-soft)" : ""}" data-r="${r.id}">${esc(r.title)}</button>`).join("")}`).join("")}</div>
       <div class="card"><div class="card-head"><h2 id="rt"></h2><div class="btn-row"><button class="btn sm" id="x-xlsx">Excel</button><button class="btn sm" id="x-csv">CSV</button><button class="btn sm" id="x-print">Print / PDF</button></div></div>
         <div id="rbody"><div class="loading">Preparing report…</div></div></div></div>`;
   $$("[data-r]", main).forEach(b => b.onclick = () => { current = b.dataset.r; reports(main); });

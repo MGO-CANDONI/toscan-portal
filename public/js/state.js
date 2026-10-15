@@ -55,6 +55,7 @@ export function startRole(claims) {
     live("r:eligibility", collection(db, "eligibility"), v => { S.d.eligibility = v; });
     live("r:allowances", collection(db, "allowances"), v => { S.d.allowances = v; });
     live("r:payrolls", collection(db, "payrolls"), v => { S.d.payrolls = v; });
+    live("r:applications", collection(db, "searchApplications"), v => { S.d.applications = v; });
     live("r:verify", query(collection(db, "studentAcademicHistory"), where("status", "==", "For Verification")), v => { S.d.verify = v; });
   }
 }
