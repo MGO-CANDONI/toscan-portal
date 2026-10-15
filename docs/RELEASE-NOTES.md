@@ -98,6 +98,11 @@ Fixed after a review of the rules, Cloud Functions and web app:
 - **Daily job** runs with a 9-minute limit and more memory so it finishes as data grows; its reminder logic now matches the compliance rules (optional documents don't trigger reminders).
 - **Web app:** remaining unescaped values escaped; external links on the public page and notification links are rendered only when they are http(s) / in-app links.
 
+## Update — October 16, 2026 (admin tools)
+
+- **Change TOSCAN ID.** Administrators can change a student's TOSCAN ID from the student record (*Change TOSCAN ID…*). Every record of the student (documents, term records, eligibility, allowances, payroll lines, history, extensions, the login account) moves to the new ID; the old ID is kept in `previousIds` and in the audit trail. Refused while a payroll containing the student is in progress.
+- **File a document for a student.** On the student's *Documents* tab, administrators can upload a document the student handed in at the office. It is recorded as filed by the administrator, may be filed after the deadline (marked as late filing), and still goes through review.
+
 ## Outstanding items
 
 1. Run the security-rules tests and a pilot with real accounts on the deployed project before announcing the portal.

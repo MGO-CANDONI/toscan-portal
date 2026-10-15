@@ -111,6 +111,8 @@ test("document files: upload only into your own folder, never overwrite or delet
   await assertFails(uploadBytes(ref(s, "documents/S1/zzzzzzzzzz04/big.pdf"), new Uint8Array(16 * 1024 * 1024), { contentType: "application/pdf" }));
   await assertFails(deleteObject(ref(s, "documents/S1/abcdefghij12/id.pdf")));
   await assertFails(deleteObject(ref(admin().storage(), "documents/S1/abcdefghij12/id.pdf")));
+  await assertSucceeds(uploadBytes(ref(admin().storage(), "documents/S2/adminupload01/id.pdf"), pdf, { contentType: "application/pdf" })); // administrator on a student's behalf
+  await assertFails(uploadBytes(ref(staff().storage(), "documents/S2/staffupload01/id.pdf"), pdf, { contentType: "application/pdf" }));     // staff can't
   await assertSucceeds(getBytes(ref(s, "documents/S1/abcdefghij12/id.pdf")));
   await assertFails(getBytes(ref(ben().storage(), "documents/S1/abcdefghij12/id.pdf")));
   await assertSucceeds(getBytes(ref(staff().storage(), "documents/S1/abcdefghij12/id.pdf")));

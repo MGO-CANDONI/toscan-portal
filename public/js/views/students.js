@@ -1,6 +1,6 @@
 // Student directory and full student record (staff/admin).
 import { S, settings, isAdmin, can, studentById } from "../state.js";
-import { db, collection, query, where, getDocs, call } from "../fb.js";
+import { db, doc, collection, query, where, getDocs, call, storage, ref, uploadBytesResumable } from "../fb.js";
 import {
   $, $$, esc, toast, busy, opts, fmtDate, fmtDateTime, money, docBadge, eligBadge, entBadge, classBadge, programBadge, recordBadge,
   TERM_NAMES, TERM_SHORT, PERIOD_NAMES, CLASS_NAMES, CLASS_SHORT, LATIN, fullName, renderTable, confirmBox, openModal, downloadCSV, downloadXLSX, fieldHtml
@@ -96,12 +96,19 @@ export async function detail(main, [id]) {
       <div class="info"><h2>${esc(fullName(s))}</h2>
         <div class="small muted">TOSCAN ID <b class="mono">${esc(s.studentId)}</b> · ${esc(s.qualification?.batch || s.batch || "No batch")} · ${acc ? `Login: ${esc(acc.email)}` : "No portal login"}</div>
         <div class="chips" style="margin-top:.4rem">${classBadge(s.classification)}${programBadge(s.programStatus)}${s.latinHonor ? `<span class="badge b-info">${esc(s.latinHonor)}</span>` : ""}${s.source === "legacy" ? `<span class="badge">From old portal</span>` : ""}</div></div>
-      ${isAdmin() ? `<div class="btn-row"><button class="btn" id="edit">Edit record</button></div>` : ""}</div></div>
+      ${isAdmin() ? `<div class="btn-row"><button class="btn" id="edit">Edit record</button><button class="btn" id="rename">Change TOSCAN ID…</button></div>` : ""}</div></div>
     <div class="tabs">${tabs.map(([k, l]) => `<button data-tab="${k}" class="${tab === k ? "active" : ""}">${esc(l)}</button>`).join("")}</div>
     <div id="tab"></div>`;
   hydratePhotos(main);
   $$("[data-tab]", main).forEach(b => b.onclick = () => { tab = b.dataset.tab; detail(main, [id]); });
   $("#edit") && ($("#edit").onclick = () => editStudent(s));
+  $("#rename") && ($("#rename").onclick = async () => {
+    const v = await confirmBox({ title: "Change TOSCAN ID", body: `Current ID: <b class="mono">${esc(s.studentId)}</b>. Every record of this student (documents, allowances, payroll lines, login) moves to the new ID; the old ID stays in the audit trail. Not allowed while a payroll containing this student is in progress.`, confirmText: "Change ID", fields: [
+      { name: "newStudentId", label: "New TOSCAN ID", placeholder: "e.g. TSC-2026-0012", required: true },
+      { name: "reason", label: "Reason", type: "textarea", required: true }] });
+    if (!v) return;
+    busy(null, () => call("renameStudentId", { studentId: s.studentId, ...v }), "TOSCAN ID changed.").then(r => { cache.delete(s.studentId); location.hash = `#/students/${encodeURIComponent(r.studentId)}`; }).catch(() => {});
+  });
   const el = $("#tab", main);
   ({ profile: tabProfile, academic: tabAcademic, documents: tabDocuments, allowance: tabAllowance, status: tabStatus })[tab](el, s, data, () => detail(main, [id]));
 }
@@ -135,7 +142,7 @@ function tabDocuments(el, s, data, reload) {
   const subs = [...data.subs].sort((a, b) => `${b.academicYear}${b.term}${b.requirementCode}${String(b.version).padStart(3, "0")}`.localeCompare(`${a.academicYear}${a.term}${a.requirementCode}${String(a.version).padStart(3, "0")}`));
   const groups = [...new Set(subs.map(x => `${x.academicYear}|${x.term}`))];
   const ext = data.ext;
-  el.innerHTML = `${isAdmin() ? `<div class="btn-row end" style="margin-bottom:.8rem"><button class="btn" id="ext">Grant deadline extension…</button></div>` : ""}
+  el.innerHTML = `${isAdmin() ? `<div class="btn-row end" style="margin-bottom:.8rem"><button class="btn primary" id="file-doc">File a document for this student…</button><button class="btn" id="ext">Grant deadline extension…</button></div>` : ""}
     ${ext.length ? `<div class="notice info">Extensions: ${ext.map(x => `${esc(TERM_SHORT[x.term])} ${esc(x.academicYear)} until ${fmtDate(x.deadline)} (${esc(x.reason)})`).join("; ")}</div>` : ""}
     ${groups.map(g => {
       const [ay, term] = g.split("|");
@@ -146,6 +153,7 @@ function tabDocuments(el, s, data, reload) {
         <tbody>${list.map(x => `<tr class="click" data-sub="${esc(x.id)}"><td>${esc(x.requirementName)}</td><td>v${x.version || 1}</td><td class="nowrap">${fmtDateTime(x.submittedAt)}</td><td>${docBadge(x.status)}</td><td class="small">${esc(x.reviewer?.name || "")}</td><td class="small">${esc(x.remarks || "")}</td></tr>`).join("")}</tbody></table></div></div>`;
     }).join("") || `<div class="card empty">No documents submitted.</div>`}`;
   $$("[data-sub]", el).forEach(tr => tr.onclick = () => { const i = subs.findIndex(x => x.id === tr.dataset.sub); openReview(subs, i); });
+  $("#file-doc", el) && ($("#file-doc", el).onclick = () => fileForStudent(s, reload));
   $("#ext", el) && ($("#ext", el).onclick = async () => {
     const v = await confirmBox({ title: "Grant a deadline extension", body: "The new deadline applies to this student and term only.", confirmText: "Grant extension", fields: [
       { name: "academicYear", label: "Academic year", type: "select", options: S.master.academicYears.map(a => a.id), value: settings().currentAcademicYear, required: true },
@@ -154,6 +162,42 @@ function tabDocuments(el, s, data, reload) {
       { name: "reason", label: "Reason", type: "textarea", required: true }] });
     if (v) busy(null, () => call("grantExtension", { studentId: s.studentId, ...v }), "Extension granted.").then(reload).catch(() => {});
   });
+}
+
+/** Administrator uploads a document the student handed in at the office. */
+function fileForStudent(s, reload) {
+  const reqs = S.master.requirements.filter(r => r.active !== false);
+  const ay = settings().currentAcademicYear;
+  const m = openModal(`<h2>File a document for ${esc(fullName(s))}</h2>
+    <p class="muted small">Use this when the student handed in the document at the TOSCAN Office. It is recorded as filed by you and still goes through review. Documents may be filed after the deadline.</p>
+    <form class="grid g2" id="ff">
+      ${fieldHtml({ name: "requirementCode", label: "Document", type: "select", options: reqs.map(r => [r.code, r.name]), required: true })}
+      ${fieldHtml({ name: "academicYear", label: "Academic year", type: "select", options: S.master.academicYears.map(a => a.id), value: ay, required: true })}
+      ${fieldHtml({ name: "term", label: "Term", type: "select", options: Object.entries(TERM_NAMES), value: s.current?.term || "T1", required: true })}
+      <div><label class="req">File (PDF, JPG, PNG or WEBP, up to 15 MB)</label><input type="file" name="file" accept="application/pdf,image/jpeg,image/png,image/webp" required data-nodirty></div>
+      <div class="spanall progress hidden" id="fp"><div></div></div>
+      <div class="spanall form-msg err" id="fm"></div>
+      <div class="spanall modal-actions"><button type="button" class="btn" data-c>Cancel</button><button class="btn primary">Upload and file</button></div></form>`);
+  $("[data-c]", m).onclick = () => m.close();
+  const f = $("#ff", m);
+  f.onsubmit = async ev => {
+    ev.preventDefault();
+    const file = f.file.files[0], msg = $("#fm", m);
+    if (!file) { msg.textContent = "Choose the file."; return; }
+    if (!["application/pdf", "image/jpeg", "image/png", "image/webp"].includes(file.type)) { msg.textContent = "Only PDF, JPG, PNG or WEBP files are accepted."; return; }
+    if (file.size > 15 * 1048576) { msg.textContent = "The file is larger than 15 MB."; return; }
+    const btn = f.querySelector(".btn.primary"); btn.disabled = true; msg.textContent = "";
+    const bar = $("#fp", m); bar.classList.remove("hidden");
+    const id = doc(collection(db, "submissions")).id;
+    const safe = file.name.replace(/[^\w.\- ]+/g, "_").slice(-120);
+    try {
+      const task = uploadBytesResumable(ref(storage, `documents/${s.studentId}/${id}/${safe}`), file, { contentType: file.type });
+      task.on("state_changed", t => { $("div", bar).style.width = (t.bytesTransferred / t.totalBytes * 100).toFixed(0) + "%"; });
+      await task;
+      await call("submitDocument", { studentId: s.studentId, submissionId: id, requirementCode: f.requirementCode.value, academicYear: f.academicYear.value, term: f.term.value, fileName: safe });
+      toast("Document filed and waiting for review.", "ok"); m.close(); reload();
+    } catch (e) { msg.textContent = e.code === "storage/unauthorized" ? "Upload not allowed (deploy the latest storage rules)." : e.message; btn.disabled = false; bar.classList.add("hidden"); }
+  };
 }
 
 function tabAllowance(el, s, data) {

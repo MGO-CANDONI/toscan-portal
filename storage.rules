@@ -16,9 +16,10 @@ service firebase.storage {
     function sizeUnder(mb) { return request.resource.size < mb * 1024 * 1024; }
 
     // Student documents: documents/{studentId}/{submissionId}/{fileName}
+    // Administrators may upload on a student's behalf (recorded as such by the server).
     match /documents/{studentId}/{submissionId}/{fileName} {
       allow read: if isStaff() || isStudent(studentId);
-      allow create: if isStudent(studentId)
+      allow create: if (isStudent(studentId) || isAdmin())
         && submissionId.matches('^[A-Za-z0-9]{10,40}$')
         && sizeUnder(15)
         && request.resource.contentType.matches('application/pdf|image/(jpeg|png|webp)');

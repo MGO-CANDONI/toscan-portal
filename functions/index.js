@@ -6,7 +6,7 @@ import "./src/options.js"; // region asia-southeast1 — must stay the first imp
 
 export { bootstrapAdmin, register, decideUser, updateAccess, updateMyProfile, verifyProfileChange } from "./src/handlers/accounts.js";
 export { saveMasterData } from "./src/handlers/masterdata.js";
-export { adminUpdateStudent, setProgramStatus, submitAcademicRecord, verifyAcademicRecord, grantExtension } from "./src/handlers/students.js";
+export { adminUpdateStudent, renameStudentId, setProgramStatus, submitAcademicRecord, verifyAcademicRecord, grantExtension } from "./src/handlers/students.js";
 export { submitDocument, reviewDocument, openSupersession, noteDocument } from "./src/handlers/documents.js";
 export { decideEligibility, recalcEligibility } from "./src/handlers/eligibility.js";
 export { generatePayroll, payrollAction } from "./src/handlers/payroll.js";

@@ -1,6 +1,6 @@
 // Student master records, academic history, program status, deadline extensions.
 import { onCall } from "firebase-functions/v2/https";
-import { db, now, actor, audit, notify, bad, notFound, conflict, denied, str, FieldValue, idArg } from "../fb.js";
+import { db, auth, now, actor, audit, notify, bad, notFound, conflict, denied, str, FieldValue, idArg } from "../fb.js";
 import { academicRecordId, extensionId, TERMS, TERM_NAMES } from "../core/policy.js";
 import { LATIN_HONORS, CLASSIFICATIONS } from "../core/records.js";
 import { isValidAY, isValidYMD } from "../core/dates.js";
@@ -195,4 +195,75 @@ export const grantExtension = onCall(async request => {
   await audit(a, "deadline.extension", { type: "student", id: studentId }, { before, after: { academicYear, term, deadline }, reason: value.reason });
   if (s.data().uid) await notify(s.data().uid, { title: "Submission deadline extended", body: `You can submit documents for ${TERM_NAMES[term]}, AY ${academicYear} until ${deadline}.`, kind: "ok" });
   return { ok: true };
+});
+
+/* ---------------- Change a TOSCAN ID ---------------- */
+const SID_RE = /^[A-Z0-9][A-Z0-9-]{1,38}[A-Z0-9]$/;
+const BY_FIELD = ["submissions", "payrollItems", "historicalPayments", "programStatusHistory"];      // keyed by random id, carry studentId
+const BY_ID = ["studentAcademicHistory", "eligibility", "allowances", "deadlineExtensions"];          // keyed by `${studentId}_…`
+
+async function chunked(ops) {
+  for (let i = 0; i < ops.length; i += 400) { const b = db.batch(); ops.slice(i, i + 400).forEach(fn => fn(b)); await b.commit(); }
+}
+
+/**
+ * Administrator: change a student's TOSCAN ID. Every record that carries the old ID
+ * (documents, term records, eligibility, allowances, payroll lines, history, extensions,
+ * the login account and its sign-in token) is moved to the new ID. The old ID is kept in
+ * the record's `previousIds` and in the audit trail. Refused while a payroll containing
+ * this student is still in progress.
+ */
+export const renameStudentId = onCall(async request => {
+  const a = await actor(request, { roles: ["admin"] });
+  const oldId = idArg(request.data?.studentId, "TOSCAN ID");
+  const newId = str(request.data?.newStudentId, 40).toUpperCase().replace(/\s+/g, "");
+  const reason = str(request.data?.reason, 300);
+  if (!SID_RE.test(newId)) bad("The new TOSCAN ID may contain capital letters, digits and dashes only (3–40 characters).");
+  if (newId === oldId) bad("The new ID is the same as the current one.");
+  if (!reason) bad("Enter the reason for changing the ID.");
+  const oldRef = db.doc(`students/${oldId}`), newRef = db.doc(`students/${newId}`);
+  const [os, ns] = await Promise.all([oldRef.get(), newRef.get()]);
+  if (!os.exists) notFound("Student not found.");
+  if (ns.exists) conflict(`TOSCAN ID ${newId} already belongs to another student.`);
+  const s = os.data();
+
+  const openItems = await db.collection("payrollItems").where("studentId", "==", oldId).where("status", "==", "Included").get();
+  const openNos = [...new Set(openItems.docs.map(d => d.data().payrollNo))];
+  if (openNos.length) {
+    const pays = await Promise.all(openNos.map(no => db.doc(`payrolls/${no}`).get()));
+    const live = pays.filter(p => p.exists && !["Released", "Archived", "Voided"].includes(p.data().status)).map(p => p.id);
+    if (live.length) conflict(`Finish or void payroll ${live.join(", ")} first; it still contains this student.`);
+  }
+
+  const ops = [];
+  // 1. The student record itself.
+  ops.push(b => b.set(newRef, { ...s, studentId: newId, previousIds: [...(s.previousIds || []), oldId], idChangedAt: now(), updatedAt: now() }));
+  ops.push(b => b.delete(oldRef));
+  // 2. Records keyed by a random id: update the studentId field (and the entitlement reference on payroll lines).
+  for (const coll of BY_FIELD) {
+    const snap = await db.collection(coll).where("studentId", "==", oldId).get();
+    for (const d of snap.docs) {
+      const patch = { studentId: newId };
+      if (coll === "payrollItems" && d.data().entitlementId?.startsWith(`${oldId}_`)) patch.entitlementId = newId + d.data().entitlementId.slice(oldId.length);
+      ops.push(b => b.update(d.ref, patch));
+    }
+  }
+  // 3. Records whose document id starts with the student id: copy under the new id, remove the old.
+  for (const coll of BY_ID) {
+    const snap = await db.collection(coll).where("studentId", "==", oldId).get();
+    for (const d of snap.docs) {
+      const nid = d.id.startsWith(`${oldId}_`) ? newId + d.id.slice(oldId.length) : d.id;
+      ops.push(b => b.set(db.collection(coll).doc(nid), { ...d.data(), studentId: newId }));
+      if (nid !== d.id) ops.push(b => b.delete(d.ref));
+    }
+  }
+  // 4. Login account and sign-in token.
+  const users = await db.collection("users").where("studentId", "==", oldId).get();
+  for (const u of users.docs) ops.push(b => b.update(u.ref, { studentId: newId, claimsUpdatedAt: now() }));
+  await chunked(ops);
+  for (const u of users.docs) if (u.data().status === "approved" && u.data().role === "student") await auth.setCustomUserClaims(u.id, { role: "student", studentId: newId });
+
+  await audit(a, "student.renameId", { type: "student", id: newId }, { before: { studentId: oldId }, after: { studentId: newId }, reason });
+  if (s.uid) await notify(s.uid, { title: "Your TOSCAN ID was updated", body: `Your TOSCAN ID is now ${newId} (previously ${oldId}).`, link: "#/profile", kind: "info" });
+  return { ok: true, studentId: newId };
 });

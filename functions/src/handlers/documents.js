@@ -44,9 +44,17 @@ async function submissionsFor(studentId, code, academicYear, term, tx = null) {
  * only into the student's own folder and never allow overwriting or deleting.
  */
 export const submitDocument = onCall(async request => {
-  const a = await actor(request, { roles: ["student"] });
+  const a = await actor(request, { roles: ["student", "admin"] });
   const d = request.data || {};
-  const studentId = a.studentId;
+  // Administrators may submit on a student's behalf (e.g. a document handed in at the office).
+  const onBehalf = a.role === "admin";
+  const studentId = onBehalf ? idArg(d.studentId, "TOSCAN ID") : a.studentId;
+  let studentUid = a.uid;
+  if (onBehalf) {
+    const ss = await db.doc(`students/${studentId}`).get();
+    if (!ss.exists) notFound("Student not found.");
+    studentUid = ss.data().uid || null;
+  }
   const { submissionId, requirementCode, academicYear, term } = d;
   const fileName = str(d.fileName, 200);
   if (!/^[A-Za-z0-9]{10,40}$/.test(submissionId || "")) bad("Invalid submission id.");
@@ -74,7 +82,8 @@ export const submitDocument = onCall(async request => {
   if (!ayExists) await discard(`Academic year ${academicYear} is not set up yet.`);
   if (term === "T3" && school && school.termsPerYear !== 3) await discard(`${school.name} has only two semesters.`);
   const state = windowState(win);
-  if (state === "closed") await discard(`The submission deadline for ${TERM_NAMES[term]}, AY ${academicYear} has passed. Ask the TOSCAN Office about an extension.`);
+  // The office may file a document after the deadline (it was received on paper); students may not.
+  if (state === "closed" && !onBehalf) await discard(`The submission deadline for ${TERM_NAMES[term]}, AY ${academicYear} has passed. Ask the TOSCAN Office about an extension.`);
   if (state === "not-yet") await discard("Submission for this term is not open yet.");
 
   const subRef = db.doc(`submissions/${submissionId}`);
@@ -87,7 +96,8 @@ export const submitDocument = onCall(async request => {
     if (approved && !approved.supersession?.open) conflict("This document is approved and locked. Ask the TOSCAN Office if it needs to be corrected.");
     const latest = live.sort((x, y) => (y.version || 1) - (x.version || 1))[0] || null;
     const record = {
-      studentId, uid: a.uid, requirementCode, requirementName: req.name, academicYear, term,
+      studentId, uid: studentUid, requirementCode, requirementName: req.name, academicYear, term,
+      submittedBy: onBehalf ? { uid: a.uid, name: a.name, role: a.role } : null, lateFiling: state === "closed",
       fileName, storagePath: path, contentType: meta.contentType, size: Number(meta.size),
       status: DOC_STATUS.SUBMITTED, version: (latest?.version || 0) + 1, previousSubmissionId: latest?.id || null,
       replacesApprovedId: approved?.id || null,
@@ -96,11 +106,11 @@ export const submitDocument = onCall(async request => {
       history: [{ at: new Date().toISOString(), by: a.uid, byName: a.name, action: "submitted" }]
     };
     tx.set(subRef, record);
-    audit(a, "document.submit", { type: "submission", id: submissionId }, { after: { requirementCode, academicYear, term, version: record.version, fileName } }, tx);
+    audit(a, onBehalf ? "document.submitForStudent" : "document.submit", { type: "submission", id: submissionId }, { after: { studentId, requirementCode, academicYear, term, version: record.version, fileName, lateFiling: record.lateFiling } }, tx);
     return record;
   });
   await recomputeForTerm(studentId, academicYear, term);
-  await notify(a.uid, { title: "Document received", body: `${req.name} for ${TERM_NAMES[term]}, AY ${academicYear} was received and is waiting for review.`, link: "#/documents", kind: "info", email: false });
+  if (studentUid) await notify(studentUid, { title: "Document received", body: `${req.name} for ${TERM_NAMES[term]}, AY ${academicYear} was ${onBehalf ? `filed by the TOSCAN Office (${a.name})` : "received"} and is waiting for review.`, link: "#/documents", kind: "info", email: false });
   return { ok: true, version: result.version };
 });
 

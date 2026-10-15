@@ -269,6 +269,35 @@ test("full program lifecycle", async t => {
     await rejects(call("updateMyProfile", "maria", { photoPath: "photos/u_other/x.jpg" }), /Invalid photo/);
   });
 
+  await t.test("administrator: file a document for a student, change a TOSCAN ID", async () => {
+    files.set("documents/TO2-201001/adminsub0000001/grades.pdf", { size: 1000, contentType: "application/pdf" });
+    await rejects(call("submitDocument", "staff", { submissionId: "adminsub0000001", studentId: "TO2-201001", requirementCode: "GRADES", academicYear: "2025-2026", term: "T1", fileName: "grades.pdf" }), /not allowed/);
+    await call("submitDocument", "admin", { submissionId: "adminsub0000001", studentId: "TO2-201001", requirementCode: "GRADES", academicYear: "2025-2026", term: "T1", fileName: "grades.pdf" });
+    const sub = get("submissions/adminsub0000001");
+    assert.equal(sub.submittedBy.uid, "u_admin"); assert.equal(sub.uid, "u_maria"); assert.equal(sub.status, "Submitted");
+
+    await rejects(call("renameStudentId", "staff", { studentId: "TO2-201001", newStudentId: "TO2-999", reason: "x" }), /not allowed/);
+    await rejects(call("renameStudentId", "admin", { studentId: "TO2-201001", newStudentId: "bad id!", reason: "x" }), /capital letters/);
+    await rejects(call("renameStudentId", "admin", { studentId: "TO2-201001", newStudentId: "TO1-100", reason: "x" }), /already belongs/);
+    const before = { subs: all("submissions").filter(x => x.studentId === "TO2-201001").length, ents: all("allowances").filter(x => x.studentId === "TO2-201001").length, items: all("payrollItems").filter(x => x.studentId === "TO2-201001").length, recs: all("studentAcademicHistory").filter(x => x.studentId === "TO2-201001").length };
+    assert.ok(before.ents > 0 && before.items > 0 && before.recs > 0);
+    await call("renameStudentId", "admin", { studentId: "TO2-201001", newStudentId: "TO2-2026-0001", reason: "Corrected per master list" });
+    assert.equal(get("students/TO2-201001"), undefined);
+    const moved = get("students/TO2-2026-0001");
+    assert.equal(moved.studentId, "TO2-2026-0001"); assert.deepEqual(moved.previousIds, ["TO2-201001"]);
+    assert.equal(all("submissions").filter(x => x.studentId === "TO2-2026-0001").length, before.subs);
+    assert.equal(all("allowances").filter(x => x.studentId === "TO2-2026-0001").length, before.ents);
+    assert.equal(all("allowances").filter(x => x.studentId === "TO2-201001").length, 0);
+    assert.ok(all("allowances").every(x => !x.id.startsWith("TO2-201001_")), "entitlement ids renamed");
+    assert.equal(all("payrollItems").filter(x => x.studentId === "TO2-2026-0001" && x.entitlementId.startsWith("TO2-2026-0001_")).length, before.items);
+    assert.equal(all("studentAcademicHistory").filter(x => x.studentId === "TO2-2026-0001").length, before.recs);
+    assert.equal(get("users/u_maria").studentId, "TO2-2026-0001");
+    assert.deepEqual(claims.get("u_maria"), { role: "student", studentId: "TO2-2026-0001" });
+    // rename back so the remaining tests keep working
+    await call("renameStudentId", "admin", { studentId: "TO2-2026-0001", newStudentId: "TO2-201001", reason: "test" });
+    assert.deepEqual(get("students/TO2-201001").previousIds, ["TO2-201001", "TO2-2026-0001"]);
+  });
+
   await t.test("Latin honor allowance is paid at the rate of the student's honor level", async () => {
     const latin = get("allowanceTypes/LATIN");
     await rejects(call("saveMasterData", "admin", { kind: "allowanceType", id: "REG", data: { ...get("allowanceTypes/REG"), rates: [...get("allowanceTypes/REG").rates, { level: "Cum Laude", amount: 1, effectiveFrom: "2030-01-01" }] } }), /Only a Latin honor/);
@@ -371,7 +400,7 @@ test("full program lifecycle", async t => {
 
   await t.test("every privileged action left an audit entry", async () => {
     const actions = new Set(all("auditLogs").map(l => l.action));
-    for (const a of ["admin.bootstrap", "user.approve", "document.approve", "document.return", "document.supersessionOpened", "eligibility.decide", "payroll.generate", "payroll.approve", "payroll.release", "payroll.void", "import.historical", "student.programStatus", "deadline.extension", "migration.legacy", "application.submit", "application.bidbook", "application.status", "application.resetCode"]) {
+    for (const a of ["admin.bootstrap", "user.approve", "document.approve", "document.return", "document.supersessionOpened", "eligibility.decide", "payroll.generate", "payroll.approve", "payroll.release", "payroll.void", "import.historical", "student.programStatus", "deadline.extension", "migration.legacy", "document.submitForStudent", "student.renameId", "application.submit", "application.bidbook", "application.status", "application.resetCode"]) {
       assert.ok(actions.has(a), `missing audit for ${a}`);
     }
   });
